@@ -409,7 +409,18 @@ export default function Dashboard() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">7天建立趨勢</h3>
               <div className="h-48">
                 {(() => {
-                  const weeklyData = trendData.data.slice(-7)
+                  const today = new Date()
+                  const filteredData = trendData.data.filter((d: any) => {
+                    if (!d?.period) return false
+                    const [monthStr, dayStr] = String(d.period).split('/')
+                    const month = parseInt(monthStr, 10)
+                    const day = parseInt(dayStr, 10)
+                    if (Number.isNaN(month) || Number.isNaN(day)) return false
+                    const date = new Date(today.getFullYear(), month - 1, day)
+                    return date <= today
+                  })
+                  const sourceData = filteredData.length > 0 ? filteredData : trendData.data
+                  const weeklyData = sourceData.slice(-7)
                   return (
                     <Line
                       data={{

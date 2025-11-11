@@ -39,9 +39,9 @@ export default function CommentForm({ onSubmit, onCancel }: CommentFormProps) {
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="輸入評論..."
-        rows={3}
-        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 text-sm"
+        placeholder="輸入除錯紀錄..."
+        rows={6}
+        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-3 text-sm"
       />
       <div className="flex justify-end space-x-2">
         {onCancel && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { issuesApi, Issue, WarrantyStatus } from '../services/issues'
+import { issuesApi, Issue, WarrantyStatus, IssueRelation } from '../services/issues'
 import CommentForm from '../components/CommentForm'
 import api from '../services/api'
 import IssueForm from '../components/IssueForm'
@@ -85,6 +85,20 @@ const PRIORITY_OPTIONS: Array<{
   },
 ]
 
+const RELATION_TYPE_OPTIONS: Array<{
+  value: 'relates' | 'duplicates'
+  label: string
+  description: string
+}> = [
+  { value: 'relates', label: '相關', description: '兩筆工單之間存在關聯' },
+  { value: 'duplicates', label: '重複', description: '新的工單與舊工單內容重複' },
+]
+
+const RELATION_TYPE_LABEL: Record<'relates' | 'duplicates', string> = {
+  relates: '相關',
+  duplicates: '重複',
+}
+
 export default function IssueDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -93,11 +107,20 @@ export default function IssueDetail() {
   const [error, setError] = useState<string>('')
   const [showEditForm, setShowEditForm] = useState(false)
   const [showCommentForm, setShowCommentForm] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
+  const [editingCommentBody, setEditingCommentBody] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [uploading, setUploading] = useState(false)
   const [activePicker, setActivePicker] = useState<'status' | 'priority' | null>(null)
   const [updatingField, setUpdatingField] = useState<'status' | 'priority' | null>(null)
   const pickerRef = useRef<HTMLDivElement | null>(null)
+  const [showRelationForm, setShowRelationForm] = useState(false)
+  const [relationType, setRelationType] = useState<'relates' | 'duplicates'>('relates')
+  const [relatedIssueId, setRelatedIssueId] = useState('')
+  const [relationError, setRelationError] = useState('')
+  const [relationSearching, setRelationSearching] = useState(false)
+  const [relationSearchTerm, setRelationSearchTerm] = useState('')
+  const [relationSearchResults, setRelationSearchResults] = useState<Issue[]>([])
 
   useEffect(() => {
     if (id) {
@@ -182,6 +205,106 @@ export default function IssueDetail() {
     }
   }
 
+  const handleDeleteComment = async (commentId: number) => {
+    if (!id) return
+    if (!confirm('確定要刪除此紀錄嗎？')) return
+
+    try {
+      await api.delete(`/issues/${id}/comments/${commentId}/`)
+      if (editingCommentId === commentId) {
+        setEditingCommentId(null)
+        setEditingCommentBody('')
+      }
+      await loadIssue()
+    } catch (error: any) {
+      console.error('Failed to delete comment:', error)
+      alert('刪除失敗：' + (error.response?.data?.error || '未知錯誤'))
+    }
+  }
+
+  const handleSaveComment = async () => {
+    if (!id || editingCommentId === null) return
+    const trimmed = editingCommentBody.trim()
+    if (!trimmed) {
+      alert('內容不可為空白')
+      return
+    }
+    try {
+      await api.put(`/issues/${id}/comments/${editingCommentId}/`, { body: trimmed })
+      setEditingCommentId(null)
+      setEditingCommentBody('')
+      await loadIssue()
+    } catch (error: any) {
+      console.error('Failed to update comment:', error)
+      alert('更新失敗：' + (error.response?.data?.error || '未知錯誤'))
+    }
+  }
+
+  const handleStartEditComment = (comment: any) => {
+    setEditingCommentId(comment.id)
+    setEditingCommentBody(comment.body || '')
+  }
+
+  const handleCancelEditComment = () => {
+    setEditingCommentId(null)
+    setEditingCommentBody('')
+  }
+
+  const handleCreateRelation = async () => {
+    if (!id) return
+    if (!relatedIssueId.trim()) {
+      setRelationError('請輸入關聯工單 ID')
+      return
+    }
+    setRelationError('')
+    setRelationSearching(true)
+    try {
+      await issuesApi.createRelation(Number(id), {
+        related_issue: Number(relatedIssueId.trim()),
+        relation_type: relationType,
+      })
+      setShowRelationForm(false)
+      setRelatedIssueId('')
+      setRelationSearchTerm('')
+      setRelationSearchResults([])
+      await loadIssue()
+    } catch (error: any) {
+      console.error('Failed to create relation:', error)
+      setRelationError(error.response?.data?.error || '建立關聯失敗，請確認工單 ID 是否正確')
+    } finally {
+      setRelationSearching(false)
+    }
+  }
+
+  const handleDeleteRelation = async (relationId: number) => {
+    if (!id) return
+    if (!confirm('確定要移除此關聯嗎？')) return
+    try {
+      await issuesApi.deleteRelation(Number(id), relationId)
+      await loadIssue()
+    } catch (error: any) {
+      console.error('Failed to delete relation:', error)
+      alert('移除失敗：' + (error.response?.data?.error || '未知錯誤'))
+    }
+  }
+
+  const handleSearchRelations = async () => {
+    if (!relationSearchTerm.trim()) {
+      setRelationSearchResults([])
+      return
+    }
+    if (!id) return
+    setRelationSearching(true)
+    try {
+      const res = await issuesApi.list({ q: relationSearchTerm.trim(), page_size: 5 })
+      setRelationSearchResults(res.data.results.filter((item) => item.id !== Number(id)))
+    } catch (error) {
+      console.error('Failed to search issues:', error)
+    } finally {
+      setRelationSearching(false)
+    }
+  }
+
   const handleQuickUpdate = async (
     field: 'status' | 'priority',
     value: IssueStatusValue | IssuePriorityValue
@@ -199,20 +322,14 @@ export default function IssueDetail() {
 
     setUpdatingField(field)
     try {
-      const payload =
-        field === 'status'
-          ? { status: value as IssueStatusValue }
-          : { priority: value as IssuePriorityValue }
-
-      await issuesApi.update(issue.id, payload)
-      setIssue((prev) =>
-        prev
-          ? ({
-              ...prev,
-              ...payload,
-            } as IssueDetailData)
-          : prev
-      )
+      if (field === 'status') {
+        const res = await issuesApi.updateStatus(issue.id, value as IssueStatusValue)
+        setIssue((prev) => (prev ? ({ ...prev, ...res.data } as IssueDetailData) : prev))
+      } else {
+        const payload = { priority: value as IssuePriorityValue }
+        const res = await issuesApi.update(issue.id, payload)
+        setIssue((prev) => (prev ? ({ ...prev, ...res.data } as IssueDetailData) : prev))
+      }
       setActivePicker(null)
     } catch (error: any) {
       console.error('Failed to update issue quickly:', error)
@@ -419,21 +536,26 @@ export default function IssueDetail() {
             <p className="text-gray-700 whitespace-pre-wrap">{issue.description}</p>
           </div>
 
-          {/* Comments */}
+          {/* Debug Records */}
           <div className="card">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
               <h4 className="text-lg font-semibold text-gray-900">
-                評論 ({issue.comments?.length || 0})
+                除錯紀錄 ({issue.comments?.length || 0})
               </h4>
               <button
-                onClick={() => setShowCommentForm(!showCommentForm)}
-                className="btn-primary text-sm"
+                onClick={() => {
+                  setShowCommentForm(!showCommentForm)
+                  if (!showCommentForm) {
+                    setEditingCommentId(null)
+                    setEditingCommentBody('')
+                  }
+                }}
+                className="btn-primary text-sm self-start md:self-auto"
               >
-                {showCommentForm ? '取消' : '新增評論'}
+                {showCommentForm ? '取消' : '新增紀錄'}
               </button>
             </div>
 
-            {/* 評論表單 */}
             {showCommentForm && (
               <div className="mb-4 pb-4 border-b">
                 <CommentForm
@@ -443,27 +565,226 @@ export default function IssueDetail() {
               </div>
             )}
 
-            {/* 評論列表 */}
             {issue.comments && issue.comments.length > 0 ? (
               <div className="space-y-4">
-                {issue.comments.map((comment: any) => (
-                  <div key={comment.id} className="border-b pb-4 last:border-0">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-gray-900">
-                          {comment.author_name || '未知用戶'}
-                        </span>
-                        <span className="text-sm text-gray-500 ml-2">
-                          {new Date(comment.created_at).toLocaleString('zh-TW')}
-                        </span>
+                {issue.comments.map((comment: any) => {
+                  const isEditing = editingCommentId === comment.id
+                  return (
+                    <div key={comment.id} className="rounded-xl border border-gray-200 p-4 shadow-sm">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                          <span className="font-semibold text-gray-800">
+                            {comment.author_name || '未知用戶'}
+                          </span>
+                          <span className="text-xs">
+                            {new Date(comment.created_at).toLocaleString('zh-TW')}
+                          </span>
+                        </div>
+                        {isEditing ? (
+                          <textarea
+                            value={editingCommentBody}
+                            onChange={(e) => setEditingCommentBody(e.target.value)}
+                            rows={6}
+                            className="w-full rounded-lg border border-primary-200 bg-white px-3 py-3 text-sm text-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                          />
+                        ) : (
+                          <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                            {comment.body}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2 justify-end">
+                          {isEditing ? (
+                            <>
+                              <button
+                                onClick={handleSaveComment}
+                                className="px-3 py-1.5 rounded-md bg-primary-500 text-white text-sm font-medium hover:bg-primary-600"
+                              >
+                                儲存
+                              </button>
+                              <button
+                                onClick={handleCancelEditComment}
+                                className="px-3 py-1.5 rounded-md border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleStartEditComment(comment)}
+                                className="px-3 py-1.5 rounded-md border border-primary-200 text-sm font-medium text-primary-600 hover:bg-primary-50"
+                              >
+                                編輯
+                              </button>
+                              <button
+                                onClick={() => handleDeleteComment(comment.id)}
+                                className="px-3 py-1.5 rounded-md border border-danger-200 text-sm font-medium text-danger-600 hover:bg-danger-50"
+                              >
+                                刪除
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <p className="text-gray-700 whitespace-pre-wrap">{comment.body}</p>
+                  )
+                })}
+              </div>
+            ) : (
+              !showCommentForm && <p className="text-gray-500">尚無除錯紀錄</p>
+            )}
+          </div>
+
+          {/* Relations */}
+          <div className="card">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+              <div>
+                <h4 className="text-lg font-semibold text-gray-900">
+                  關聯工單 ({issue.relations?.length || 0})
+                </h4>
+                <p className="mt-1 text-xs text-gray-500">用來追蹤同一客戶的相關/重複工單，建立後可快速互跳查閱歷程。</p>
+              </div>
+              <button
+                onClick={() => {
+                  const nextShow = !showRelationForm
+                  setShowRelationForm(nextShow)
+                  setRelationError('')
+                  if (!nextShow) {
+                    setRelatedIssueId('')
+                    setRelationSearchTerm('')
+                    setRelationSearchResults([])
+                  }
+                }}
+                className="btn-primary text-sm self-start md:self-auto"
+              >
+                {showRelationForm ? '取消' : '新增關聯'}
+              </button>
+            </div>
+
+            {showRelationForm && (
+              <div className="mb-4 border border-primary-100 rounded-xl bg-primary-50/40 p-4 space-y-3">
+                {relationError && (
+                  <div className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+                    {relationError}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-primary-600">關聯類型</label>
+                    <select
+                      value={relationType}
+                      onChange={(e) => setRelationType(e.target.value as typeof relationType)}
+                      className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500"
+                    >
+                      {RELATION_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-primary-500">
+                      {RELATION_TYPE_OPTIONS.find((opt) => opt.value === relationType)?.description}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-primary-600">關聯工單 ID</label>
+                    <input
+                      type="number"
+                      value={relatedIssueId}
+                      onChange={(e) => setRelatedIssueId(e.target.value)}
+                      min={1}
+                      className="w-full rounded-md border border-primary-200 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500"
+                      placeholder="輸入工單 ID"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-primary-600">快速搜尋工單</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={relationSearchTerm}
+                      onChange={(e) => setRelationSearchTerm(e.target.value)}
+                      className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500"
+                      placeholder="輸入關鍵字或客戶名稱"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSearchRelations}
+                      className="px-3 py-2 rounded-md border border-primary-200 text-sm font-medium text-primary-600 hover:bg-primary-50"
+                      disabled={relationSearching}
+                    >
+                      {relationSearching ? '搜尋中...' : '搜尋'}
+                    </button>
+                  </div>
+                  {relationSearchResults.length > 0 && (
+                    <div className="rounded-lg border border-primary-100 bg-white px-3 py-2 text-sm text-primary-700 space-y-1 max-h-40 overflow-y-auto">
+                      {relationSearchResults.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setRelatedIssueId(String(item.id))
+                            setRelationSearchTerm(item.title)
+                          }}
+                          className="flex w-full items-center justify-between rounded-md px-2 py-1 hover:bg-primary-50"
+                        >
+                          <span className="truncate text-left">
+                            #{item.id} {item.title}
+                          </span>
+                          <span className="text-xs text-primary-400">選擇</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCreateRelation}
+                    className="px-3 py-2 rounded-md bg-primary-500 text-white text-sm font-medium hover:bg-primary-600"
+                    disabled={relationSearching}
+                  >
+                    建立關聯
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {issue.relations && issue.relations.length > 0 ? (
+              <div className="space-y-3">
+                {issue.relations.map((relation: IssueRelation) => (
+                  <div key={relation.id} className="flex flex-col gap-2 rounded-xl border border-gray-200 px-4 py-3 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-medium text-gray-800">
+                        #{relation.related_issue} {relation.related_issue_title || '—'}
+                      </span>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span className="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 font-medium text-primary-600">
+                          {RELATION_TYPE_LABEL[relation.relation_type as 'relates' | 'duplicates']}
+                        </span>
+                        <span>{new Date(relation.created_at).toLocaleString('zh-TW')}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => navigate(`/issues/${relation.related_issue}`)}
+                        className="px-3 py-1.5 rounded-md border border-primary-200 text-sm font-medium text-primary-600 hover:bg-primary-50"
+                      >
+                        查看工單
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRelation(relation.id)}
+                        className="px-3 py-1.5 rounded-md border border-danger-200 text-sm font-medium text-danger-600 hover:bg-danger-50"
+                      >
+                        移除
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
-              !showCommentForm && <p className="text-gray-500">尚無評論</p>
+              !showRelationForm && <p className="text-gray-500">尚無關聯工單</p>
             )}
           </div>
 
@@ -521,32 +842,6 @@ export default function IssueDetail() {
             )}
           </div>
 
-          {/* Status History */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">活動紀錄</h4>
-            {issue.status_history && issue.status_history.length > 0 ? (
-              <div className="space-y-3">
-                {issue.status_history.map((history: any) => (
-                  <div key={history.id} className="flex items-center text-sm">
-                    <span className="text-gray-500">
-                      {new Date(history.changed_at).toLocaleString('zh-TW')}
-                    </span>
-                    <span className="mx-2 text-gray-400">→</span>
-                    <span className="text-gray-700">
-                      {history.from_status} → {history.to_status}
-                    </span>
-                    {history.changed_by_name && (
-                      <span className="text-gray-500 ml-2">
-                        (by {history.changed_by_name})
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500">尚無活動紀錄</p>
-            )}
-          </div>
         </div>
 
         {/* Right Column - Sidebar */}
@@ -881,4 +1176,5 @@ export default function IssueDetail() {
     </div>
   )
 }
+
 

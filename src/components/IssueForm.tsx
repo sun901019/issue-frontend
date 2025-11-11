@@ -20,6 +20,7 @@ interface CustomerWarranty {
   end_date?: string | null
   status?: WarrantyStatus
   notes?: string
+  created_at?: string
 }
 
 interface WarrantySummary {
@@ -56,11 +57,23 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
     source: issue?.source || '',
     assignee: issue?.assignee || undefined,
   })
+  const formatDateLocal = (value?: string) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const tzOffset = date.getTimezoneOffset()
+    const localDate = new Date(date.getTime() - tzOffset * 60000)
+    return localDate.toISOString().slice(0, 10)
+  }
+  const [createdAt, setCreatedAt] = useState<string>(() =>
+    formatDateLocal(issue?.created_at) || formatDateLocal(new Date().toISOString())
+  )
   
   const [users, setUsers] = useState<Array<{ id: number; username: string }>>([])
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | undefined>(issue?.customer)
-  const [selectedWarrantyId, setSelectedWarrantyId] = useState<number | undefined>(issue?.warranty || undefined)
+  const [selectedWarrantyId, setSelectedWarrantyId] = useState<number | null>(() => issue?.warranty ?? null)
+  const [hasManualWarrantySelection, setHasManualWarrantySelection] = useState(false)
   
   const [dictionaries, setDictionaries] = useState<{
     status?: Dictionary[]
@@ -97,7 +110,17 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
     api.get('/customers/')
       .then((res) => {
         if (res.data && Array.isArray(res.data)) {
-          setCustomers(res.data)
+          const normalized = res.data.map((customer: CustomerOption) => ({
+            ...customer,
+            warranties: customer.warranties
+              ? [...customer.warranties].sort((a, b) => {
+                  const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+                  const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+                  return bTime - aTime
+                })
+              : [],
+          }))
+          setCustomers(normalized)
         }
       })
       .catch((err) => {
@@ -108,34 +131,73 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
   // 當選擇客戶時，自動填充標題並預選保固
   useEffect(() => {
     if (!selectedCustomerId) {
-      setSelectedWarrantyId(undefined)
+      if (selectedWarrantyId !== null) {
+        setSelectedWarrantyId(null)
+      }
       return
     }
 
-    const customer = customers.find(c => c.id === selectedCustomerId)
+    const customer = customers.find((c) => c.id === selectedCustomerId)
     if (!customer) return
 
-    setFormData(prev => ({ ...prev, title: customer.name }))
+    setFormData((prev) => ({ ...prev, title: customer.name }))
 
-    const hardwareWarranties = customer.warranties?.filter(w => w.type === 'hardware') || []
-    const hasCurrentWarranty = hardwareWarranties.some(w => w.id === selectedWarrantyId)
-    if (!hasCurrentWarranty) {
-      const defaultWarrantyId = customer.hardware_summary?.next_id || hardwareWarranties[0]?.id
-      setSelectedWarrantyId(defaultWarrantyId || undefined)
+    const hardwareWarranties = customer.warranties?.filter((w) => w.type === 'hardware') || []
+    const summaryDefaultId =
+      customer.hardware_summary?.next_id &&
+      hardwareWarranties.some((w) => w.id === customer.hardware_summary?.next_id)
+        ? customer.hardware_summary?.next_id
+        : undefined
+
+    const currentExists =
+      selectedWarrantyId !== null && hardwareWarranties.some((w) => w.id === selectedWarrantyId)
+
+    if (hasManualWarrantySelection) {
+      if (selectedWarrantyId !== null && !currentExists) {
+        setHasManualWarrantySelection(false)
+        setSelectedWarrantyId(null)
+      }
+      return
     }
-  }, [selectedCustomerId, customers, selectedWarrantyId])
+
+    if (hardwareWarranties.length === 0) {
+      if (selectedWarrantyId !== null) {
+        setSelectedWarrantyId(null)
+      }
+      return
+    }
+
+    const defaultWarrantyId =
+      (currentExists
+        ? selectedWarrantyId
+        : summaryDefaultId ?? hardwareWarranties[0]?.id) ?? null
+
+    if (defaultWarrantyId !== selectedWarrantyId) {
+      setSelectedWarrantyId(defaultWarrantyId)
+    }
+  }, [selectedCustomerId, customers, selectedWarrantyId, hasManualWarrantySelection])
+
+  useEffect(() => {
+    setHasManualWarrantySelection(false)
+  }, [selectedCustomerId])
+
+  useEffect(() => {
+    setCreatedAt(formatDateLocal(issue?.created_at) || formatDateLocal(new Date().toISOString()))
+  }, [issue?.created_at])
 
   const selectedCustomer = selectedCustomerId
     ? customers.find(c => c.id === selectedCustomerId)
     : undefined
   const hardwareWarranties = selectedCustomer?.warranties?.filter(w => w.type === 'hardware') || []
   const softwareWarranties = selectedCustomer?.warranties?.filter(w => w.type === 'software') || []
-  const selectedWarranty = hardwareWarranties.find(w => w.id === selectedWarrantyId)
+  const selectedWarranty =
+    selectedWarrantyId !== null
+      ? hardwareWarranties.find((w) => w.id === selectedWarrantyId) || null
+      : null
 
   const baseFieldClass =
     'block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 placeholder:text-gray-400'
   const selectClass = `${baseFieldClass}`
-  const textareaClass = `${baseFieldClass} min-h-[120px] resize-vertical`
 
   const getStatusBadgeClass = (status?: WarrantyStatus) => {
     if (!status) return 'bg-gray-100 text-gray-600'
@@ -170,12 +232,16 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
     
     try {
       // 类型转换以符合 API 要求
-      const submitData = {
+      const submitData: any = {
         ...formData,
         priority: formData.priority as 'Low' | 'Medium' | 'High',
         status: formData.status as 'Open' | 'In Progress' | 'Closed' | 'Pending',
         customer: selectedCustomerId, // 關聯客戶
-        warranty: selectedWarrantyId || null,
+        warranty: selectedWarrantyId ?? null,
+      }
+      const createdAtIso = createdAt ? new Date(createdAt).toISOString() : null
+      if (createdAtIso) {
+        submitData.created_at = createdAtIso
       }
       
       if (issue) {
@@ -243,10 +309,15 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
               </label>
               {hardwareWarranties.length > 0 ? (
                 <select
-                  value={selectedWarrantyId || ''}
-                  onChange={(e) => setSelectedWarrantyId(e.target.value ? Number(e.target.value) : undefined)}
+                  value={selectedWarrantyId ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setHasManualWarrantySelection(true)
+                    setSelectedWarrantyId(value ? Number(value) : null)
+                  }}
                   className={`${selectClass}`}
                 >
+                  <option value="">無（不指定硬體批次）</option>
                   {hardwareWarranties.map((warranty) => (
                     <option key={warranty.id} value={warranty.id}>
                       {warranty.title}（到期 {formatDate(warranty.end_date)}）
@@ -257,13 +328,16 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
                 <p className="text-xs text-gray-500">尚未設定硬體保固</p>
               )}
 
-              {selectedWarranty && (
+              {selectedWarranty ? (
                 <div className="mt-2 text-xs text-gray-600 space-y-1">
                   <div className={`inline-flex items-center px-2 py-0.5 rounded-full ${getStatusBadgeClass(selectedWarranty.status)}`}>
                     {getWarrantyLabel(selectedWarranty.status)}
                   </div>
                   <div>到期日：{formatDate(selectedWarranty.end_date)}</div>
+                  {selectedWarranty.notes && <div>備註：{selectedWarranty.notes}</div>}
                 </div>
+              ) : (
+                <div className="mt-2 text-xs text-gray-500">目前未指定硬體保固。</div>
               )}
             </div>
 
@@ -298,9 +372,22 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
           required
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          rows={4}
-          className={`mt-1 ${textareaClass}`}
+          rows={6}
+          className="mt-1 block w-full rounded-lg border border-primary-300 bg-white text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 px-4 py-3"
           placeholder="輸入 Issue 詳細描述"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          建立日期 <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="date"
+          required
+          value={createdAt}
+          onChange={(e) => setCreatedAt(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
         />
       </div>
 

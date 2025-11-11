@@ -24,6 +24,14 @@ export interface IssueCustomerWarranty {
   status?: WarrantyStatus
 }
 
+export interface IssueRelation {
+  id: number
+  related_issue: number
+  related_issue_title: string
+  relation_type: 'relates' | 'duplicates'
+  created_at: string
+}
+
 export interface Issue {
   id: number
   title: string
@@ -49,6 +57,7 @@ export interface Issue {
   software_warranty_status?: WarrantyStatus
   hardware_warranties?: IssueCustomerWarranty[]
   software_warranties?: IssueCustomerWarranty[]
+  relations?: IssueRelation[]
   first_response_at?: string
   resolved_at?: string
   created_at: string
@@ -98,7 +107,7 @@ export const issuesApi = {
   },
   
   updateStatus: (id: number, status: string) => {
-    return api.patch(`/issues/${id}/status/`, { status })
+    return api.patch<Issue>(`/issues/${id}/status/`, { status })
   },
   
   import: (file: File) => {
@@ -134,6 +143,14 @@ export const issuesApi = {
   
   deleteAttachment: (id: number, attachmentId: number) => {
     return api.delete(`/issues/${id}/attachments/${attachmentId}/`)
+  },
+
+  createRelation: (id: number, data: { related_issue: number; relation_type: IssueRelation['relation_type'] }) => {
+    return api.post(`/issues/${id}/relations/`, data)
+  },
+
+  deleteRelation: (id: number, relationId: number) => {
+    return api.delete(`/issues/${id}/relations/${relationId}/`)
   },
 }
 

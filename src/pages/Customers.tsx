@@ -24,6 +24,7 @@ interface CustomerWarranty {
   end_date?: string | null
   notes?: string
   status?: WarrantyStatus
+  created_at?: string
 }
 
 interface Customer {
@@ -49,12 +50,15 @@ export default function Customers() {
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [warrantyFilter, setWarrantyFilter] = useState<'active' | 'expired'>('active')
+  const [expandedHardwareCustomers, setExpandedHardwareCustomers] = useState<number[]>([])
+  const [expandedSoftwareCustomers, setExpandedSoftwareCustomers] = useState<number[]>([])
 type WarrantyFormItem = {
   id?: number
   type: 'hardware' | 'software'
   title: string
   end_date?: string
   notes?: string
+  created_at?: string
 }
 
   const [formData, setFormData] = useState({
@@ -106,7 +110,17 @@ type WarrantyFormItem = {
     setLoading(true)
     try {
       const res = await api.get('/customers/')
-      setCustomers(res.data)
+      const sorted = res.data.map((customer: Customer) => ({
+        ...customer,
+        warranties: customer.warranties
+          ? [...customer.warranties].sort((a, b) => {
+              const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+              const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+              return bTime - aTime
+            })
+          : [],
+      }))
+      setCustomers(sorted)
     } catch (error) {
       console.error('Failed to load customers:', error)
     } finally {
@@ -130,13 +144,22 @@ type WarrantyFormItem = {
 
   const handleEdit = (customer: Customer) => {
     setEditingCustomer(customer)
-    const warranties = customer.warranties?.map((warranty) => ({
-      id: warranty.id,
-      type: warranty.type,
-      title: warranty.title,
-      end_date: warranty.end_date || undefined,
-      notes: warranty.notes || '',
-    })) || []
+    const warranties =
+      customer.warranties
+        ?.slice()
+        .sort((a, b) => {
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+          return bTime - aTime
+        })
+        .map((warranty) => ({
+          id: warranty.id,
+          type: warranty.type,
+          title: warranty.title,
+          end_date: warranty.end_date || undefined,
+          notes: warranty.notes || '',
+          created_at: warranty.created_at || undefined,
+        })) || []
     setFormData({
       name: customer.name,
       business_owner: customer.business_owner || '',
@@ -203,13 +226,14 @@ type WarrantyFormItem = {
     setFormData((prev) => ({
       ...prev,
       warranties: [
-        ...prev.warranties,
         {
           type,
           title: '',
           end_date: undefined,
           notes: '',
+          created_at: new Date().toISOString(),
         },
+        ...prev.warranties,
       ],
     }))
   }
@@ -237,6 +261,18 @@ type WarrantyFormItem = {
         warranties: updated,
       }
     })
+  }
+
+  const toggleHardwareDetails = (customerId: number) => {
+    setExpandedHardwareCustomers((prev) =>
+      prev.includes(customerId) ? prev.filter((id) => id !== customerId) : [...prev, customerId]
+    )
+  }
+
+  const toggleSoftwareDetails = (customerId: number) => {
+    setExpandedSoftwareCustomers((prev) =>
+      prev.includes(customerId) ? prev.filter((id) => id !== customerId) : [...prev, customerId]
+    )
   }
 
   const activeCustomers = customers.filter((customer) => {
@@ -342,6 +378,22 @@ type WarrantyFormItem = {
               const softwareSummary = customer.software_summary
               const softwareStatus = softwareSummary?.status
               const softwareBadgeClass = softwareStatus ? getBadgeClass(softwareStatus) : 'bg-gray-100 text-gray-600'
+              const hardwareWarranties = (customer.warranties || []).filter((warranty) => warranty.type === 'hardware')
+              const softwareWarranties = (customer.warranties || []).filter((warranty) => warranty.type === 'software')
+              const canToggleHardware = hardwareWarranties.length > 1
+              const canToggleSoftware = softwareWarranties.length > 1
+              const hardwareExpanded =
+                hardwareWarranties.length === 0
+                  ? false
+                  : canToggleHardware
+                    ? expandedHardwareCustomers.includes(customer.id)
+                    : true
+              const softwareExpanded =
+                softwareWarranties.length === 0
+                  ? false
+                  : canToggleSoftware
+                    ? expandedSoftwareCustomers.includes(customer.id)
+                    : true
               const rowClass =
                 hardwareStatus.state === 'expired'
                   ? 'bg-danger-50 hover:bg-danger-100'
@@ -381,10 +433,23 @@ type WarrantyFormItem = {
                     <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${hardwareBadgeClass}`}>
                       <span>{hardwareStatus.label}</span>
                     </div>
-                    <div className="space-y-2">
-                      {(customer.warranties || [])
-                        .filter((warranty) => warranty.type === 'hardware')
-                        .map((warranty) => (
+                    {canToggleHardware && (
+                      <div className="flex items-center gap-2 text-xs text-primary-600">
+                        <button
+                          type="button"
+                          onClick={() => toggleHardwareDetails(customer.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-primary-200 bg-white px-2.5 py-1 font-medium hover:bg-primary-50 transition"
+                        >
+                          <svg className={`h-3.5 w-3.5 transition-transform ${hardwareExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.188l3.71-3.957a.75.75 0 011.08 1.04l-4.24 4.53a.75.75 0 01-1.08 0L5.25 8.27a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
+                          </svg>
+                          {hardwareExpanded ? '收合批次' : `查看批次 (${hardwareWarranties.length})`}
+                        </button>
+                      </div>
+                    )}
+                    {hardwareExpanded && (
+                      <div className="space-y-2">
+                        {hardwareWarranties.map((warranty) => (
                           <div
                             key={warranty.id}
                             className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2 text-xs text-primary-700 shadow-sm"
@@ -405,10 +470,9 @@ type WarrantyFormItem = {
                             )}
                           </div>
                         ))}
-                      {(customer.warranties || []).filter((warranty) => warranty.type === 'hardware').length === 0 && (
-                        <div className="text-xs text-gray-400">尚未設定硬體保固</div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+                    {hardwareWarranties.length === 0 && <div className="text-xs text-gray-400">尚未設定硬體保固</div>}
                   </div>
                 </td>
                 <td className="px-6 py-4 align-top text-sm">
@@ -416,10 +480,23 @@ type WarrantyFormItem = {
                     <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${softwareBadgeClass}`}>
                       <span>{softwareStatus?.label || '未設定'}</span>
                     </div>
-                    <div className="space-y-2">
-                      {(customer.warranties || [])
-                        .filter((warranty) => warranty.type === 'software')
-                        .map((warranty) => (
+                    {canToggleSoftware && (
+                      <div className="flex items-center gap-2 text-xs text-success-600">
+                        <button
+                          type="button"
+                          onClick={() => toggleSoftwareDetails(customer.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-success-200 bg-white px-2.5 py-1 font-medium hover:bg-success-50 transition"
+                        >
+                          <svg className={`h-3.5 w-3.5 transition-transform ${softwareExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.188l3.71-3.957a.75.75 0 011.08 1.04l-4.24 4.53a.75.75 0 01-1.08 0L5.25 8.27a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
+                          </svg>
+                          {softwareExpanded ? '收合批次' : `查看批次 (${softwareWarranties.length})`}
+                        </button>
+                      </div>
+                    )}
+                    {softwareExpanded && (
+                      <div className="space-y-2">
+                        {softwareWarranties.map((warranty) => (
                           <div
                             key={warranty.id}
                             className="rounded-lg border border-success-100 bg-success-50/60 px-3 py-2 text-xs text-success-700 shadow-sm"
@@ -440,10 +517,9 @@ type WarrantyFormItem = {
                             )}
                           </div>
                         ))}
-                      {(customer.warranties || []).filter((warranty) => warranty.type === 'software').length === 0 && (
-                        <div className="text-xs text-gray-400">尚未設定軟體保固</div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+                    {softwareWarranties.length === 0 && <div className="text-xs text-gray-400">尚未設定軟體保固</div>}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
