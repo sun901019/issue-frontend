@@ -53,7 +53,10 @@ export default function Dashboard() {
       setKpis(kpiRes.data)
 
       // 載入趨勢數據（7天）
-      const trendRes = await reportsApi.getTrend('day')
+      const today = new Date()
+      const currentYear = today.getFullYear()
+      const currentMonth = today.getMonth() + 1
+      const trendRes = await reportsApi.getTrend('day', { year: currentYear, month: currentMonth })
       setTrendData(trendRes.data)
 
       // 載入最近更新
@@ -89,11 +92,17 @@ export default function Dashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* 總問題數 */}
-        <div className="card card-hover relative overflow-hidden bg-gradient-to-br from-white to-primary-50/30">
+        <div className="card card-hover relative overflow-hidden bg-white border border-primary-100/60 shadow-lg shadow-primary-100/30">
+          <div className="absolute inset-0 opacity-[0.18]">
+            <svg className="h-full w-full text-primary-200" viewBox="0 0 300 200" fill="none">
+              <path d="M20 180 Q60 40 120 120 T220 80 T320 160" stroke="currentColor" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="relative">
           <div className="flex items-center justify-between mb-3">
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">總問題數</p>
-              <p className="mt-2 text-3xl font-bold text-primary-600">{kpis.total}</p>
+              <p className="mt-2 text-4xl font-black tracking-tight text-primary-600">{kpis.total}</p>
               {kpis.change_percentage !== undefined && (
                 <div className="flex items-center mt-2 text-xs">
                   <span className={`flex items-center ${
@@ -115,18 +124,25 @@ export default function Dashboard() {
             </div>
           </div>
           {kpis.trend_7days && kpis.trend_7days.length > 0 && (
-            <div className="mt-3 -mx-6 -mb-6">
+            <div className="mt-4 -mx-6 -mb-6 bg-white/40 px-6 py-3">
               <MiniChart data={kpis.trend_7days} color="#3B82F6" height={50} />
             </div>
           )}
+          </div>
         </div>
         
         {/* 待處理 */}
-        <div className="card card-hover relative overflow-hidden bg-gradient-to-br from-white to-warning-50/30">
+        <div className="card card-hover relative overflow-hidden bg-white border border-warning-100/60 shadow-lg shadow-warning-100/30">
+          <div className="absolute inset-0 opacity-[0.14]">
+            <svg className="h-full w-full text-warning-300" viewBox="0 0 300 200" fill="none">
+              <path d="M10 160 Q90 40 150 120 T260 60" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="relative">
           <div className="flex items-center justify-between mb-3">
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">待處理</p>
-              <p className="mt-2 text-3xl font-bold text-warning-600">{kpis.open}</p>
+              <p className="mt-2 text-4xl font-black tracking-tight text-warning-600">{kpis.open}</p>
               {kpis.total > 0 && (
                 <div className="mt-2">
                   <CircularProgress 
@@ -144,14 +160,21 @@ export default function Dashboard() {
               </svg>
             </div>
           </div>
+          </div>
         </div>
         
         {/* 處理中 */}
-        <div className="card card-hover relative overflow-hidden bg-gradient-to-br from-white to-primary-50/30">
+        <div className="card card-hover relative overflow-hidden bg-white border border-primary-100/60 shadow-lg shadow-primary-100/30">
+          <div className="absolute inset-0 opacity-[0.12]">
+            <svg className="h-full w-full text-primary-200" viewBox="0 0 300 200" fill="none">
+              <path d="M20 150 Q110 20 170 110 T310 80" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="relative">
           <div className="flex items-center justify-between mb-3">
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">處理中</p>
-              <p className="mt-2 text-3xl font-bold text-primary-600">{kpis.in_progress}</p>
+              <p className="mt-2 text-4xl font-black tracking-tight text-primary-600">{kpis.in_progress}</p>
               {kpis.total > 0 && (
                 <div className="mt-2">
                   <CircularProgress 
@@ -169,14 +192,21 @@ export default function Dashboard() {
               </svg>
             </div>
           </div>
+          </div>
         </div>
         
         {/* 已完成 */}
-        <div className="card card-hover relative overflow-hidden bg-gradient-to-br from-white to-success-50/30">
+        <div className="card card-hover relative overflow-hidden bg-white border border-success-100/60 shadow-lg shadow-success-100/30">
+          <div className="absolute inset-0 opacity-[0.12]">
+            <svg className="h-full w-full text-success-200" viewBox="0 0 300 200" fill="none">
+              <path d="M0 170 Q80 40 150 140 T300 90" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="relative">
           <div className="flex items-center justify-between mb-3">
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">已完成</p>
-              <p className="mt-2 text-3xl font-bold text-success-600">{kpis.closed}</p>
+              <p className="mt-2 text-4xl font-black tracking-tight text-success-600">{kpis.closed}</p>
               {kpis.completion_rate !== undefined && (
                 <div className="mt-2">
                   <CircularProgress 
@@ -193,6 +223,7 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -375,74 +406,66 @@ export default function Dashboard() {
           {/* 第二行：趨勢圖表 */}
           {trendData && trendData.data && trendData.data.length > 0 && (
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">7天趨勢分析</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">7天建立趨勢</h3>
               <div className="h-48">
-                <Line
-                  data={{
-                    labels: trendData.data.map((d: any) => d.period),
-                    datasets: [
-                      {
-                        label: '建立',
-                        data: trendData.data.map((d: any) => d.created),
-                        borderColor: 'rgb(59, 130, 246)',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        tension: 0.4,
-                        fill: true,
-                        pointRadius: 4,
-                        pointHoverRadius: 6,
-                        pointBackgroundColor: 'rgb(59, 130, 246)',
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2,
-                      },
-                      {
-                        label: '完成',
-                        data: trendData.data.map((d: any) => d.closed),
-                        borderColor: 'rgb(16, 185, 129)',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        tension: 0.4,
-                        fill: true,
-                        pointRadius: 4,
-                        pointHoverRadius: 6,
-                        pointBackgroundColor: 'rgb(16, 185, 129)',
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2,
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        position: 'top' as const,
-                      },
-                      tooltip: {
-                        callbacks: {
-                          label: (context: any) => {
-                            return `${context.dataset.label}: ${Math.round(context.parsed.y)} 個`
+                {(() => {
+                  const weeklyData = trendData.data.slice(-7)
+                  return (
+                    <Line
+                      data={{
+                        labels: weeklyData.map((d: any) => d.period),
+                        datasets: [
+                          {
+                            label: '建立',
+                            data: weeklyData.map((d: any) => d.created),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: 'rgb(59, 130, 246)',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                          },
+                        ],
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: {
+                            position: 'top' as const,
+                          },
+                          tooltip: {
+                            callbacks: {
+                              label: (context: any) => {
+                                return `${context.dataset.label}: ${Math.round(context.parsed.y)} 個`
+                              },
+                            },
                           },
                         },
-                      },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: {
-                          stepSize: 1,
-                          callback: function(value: any) {
-                            return Math.round(value) + ' 個'
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                            ticks: {
+                              stepSize: 1,
+                              callback: function(value: any) {
+                                return Math.round(value) + ' 個'
+                              },
+                            },
+                          },
+                          x: {
+                            ticks: {
+                              maxRotation: 45,
+                              minRotation: 45,
+                            },
                           },
                         },
-                      },
-                      x: {
-                        ticks: {
-                          maxRotation: 45,
-                          minRotation: 45,
-                        },
-                      },
-                    },
-                  }}
-                />
+                      }}
+                    />
+                  )
+                })()}
               </div>
             </div>
           )}

@@ -2,6 +2,30 @@ import { useState, useEffect } from 'react'
 import api from '../services/api'
 import { getWarrantyStatus } from '../utils/warranty'
 
+interface WarrantyStatus {
+  state: 'none' | 'active' | 'expiring' | 'expired'
+  label: string
+  days_left?: number | null
+  color: 'gray' | 'success' | 'warning' | 'danger'
+}
+
+interface WarrantySummary {
+  count: number
+  next_id?: number | null
+  next_title?: string | null
+  next_due_date?: string | null
+  status: WarrantyStatus
+}
+
+interface CustomerWarranty {
+  id?: number
+  type: 'hardware' | 'software'
+  title: string
+  end_date?: string | null
+  notes?: string
+  status?: WarrantyStatus
+}
+
 interface Customer {
   id: number
   name: string
@@ -12,7 +36,9 @@ interface Customer {
   handover_completed: boolean
   training_completed: boolean
   internal_network_connected: boolean
-  warranty_due?: string
+  warranties?: CustomerWarranty[]
+  hardware_summary?: WarrantySummary
+  software_summary?: WarrantySummary
   created_at: string
   updated_at: string
 }
@@ -23,18 +49,58 @@ export default function Customers() {
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [warrantyFilter, setWarrantyFilter] = useState<'active' | 'expired'>('active')
+type WarrantyFormItem = {
+  id?: number
+  type: 'hardware' | 'software'
+  title: string
+  end_date?: string
+  notes?: string
+}
+
   const [formData, setFormData] = useState({
     name: '',
     business_owner: '',
     handover_completed: false,
     training_completed: false,
     internal_network_connected: false,
-    warranty_due: '' as string | undefined,
+    warranties: [] as WarrantyFormItem[],
   })
 
   useEffect(() => {
     loadCustomers()
   }, [])
+
+  const defaultHardwareStatus = getWarrantyStatus(undefined)
+
+  const deriveHardwareStatus = (customer: Customer) => {
+    const summary = customer.hardware_summary
+    const status = summary?.status || defaultHardwareStatus
+    const dueDate = summary?.next_due_date ? new Date(summary.next_due_date) : null
+    return {
+      status,
+      dueDate,
+    }
+  }
+
+  const getBadgeClass = (status: { color: string }) => {
+    switch (status.color) {
+      case 'success':
+        return 'bg-success-100 text-success-700'
+      case 'warning':
+        return 'bg-warning-100 text-warning-700'
+      case 'danger':
+        return 'bg-danger-100 text-danger-700'
+      default:
+        return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  const formatDateText = (value?: string | Date | null) => {
+    if (!value) return '-'
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString('zh-TW')
+  }
 
   const loadCustomers = async () => {
     setLoading(true)
@@ -57,20 +123,27 @@ export default function Customers() {
       handover_completed: false,
       training_completed: false,
       internal_network_connected: false,
-      warranty_due: undefined,
+      warranties: [],
     })
     setShowForm(true)
   }
 
   const handleEdit = (customer: Customer) => {
     setEditingCustomer(customer)
+    const warranties = customer.warranties?.map((warranty) => ({
+      id: warranty.id,
+      type: warranty.type,
+      title: warranty.title,
+      end_date: warranty.end_date || undefined,
+      notes: warranty.notes || '',
+    })) || []
     setFormData({
       name: customer.name,
       business_owner: customer.business_owner || '',
       handover_completed: customer.handover_completed,
       training_completed: customer.training_completed,
       internal_network_connected: customer.internal_network_connected,
-      warranty_due: customer.warranty_due ? customer.warranty_due.split('T')[0] : undefined,
+      warranties,
     })
     setShowForm(true)
   }
@@ -100,7 +173,13 @@ export default function Customers() {
         handover_completed: formData.handover_completed,
         training_completed: formData.training_completed,
         internal_network_connected: formData.internal_network_connected,
-        warranty_due: formData.warranty_due ? `${formData.warranty_due}T00:00:00` : null,
+        warranties: formData.warranties.map((warranty) => ({
+          id: warranty.id,
+          type: warranty.type,
+          title: warranty.title,
+          end_date: warranty.end_date || null,
+          notes: warranty.notes || '',
+        })),
       }
       
       if (editingCustomer) {
@@ -120,13 +199,53 @@ export default function Customers() {
     }
   }
 
+  const addWarranty = (type: 'hardware' | 'software') => {
+    setFormData((prev) => ({
+      ...prev,
+      warranties: [
+        ...prev.warranties,
+        {
+          type,
+          title: '',
+          end_date: undefined,
+          notes: '',
+        },
+      ],
+    }))
+  }
+
+  const updateWarrantyField = (index: number, field: keyof WarrantyFormItem, value: string) => {
+    setFormData((prev) => {
+      const updated = [...prev.warranties]
+      updated[index] = {
+        ...updated[index],
+        [field]: value as any,
+      }
+      return {
+        ...prev,
+        warranties: updated,
+      }
+    })
+  }
+
+  const removeWarranty = (index: number) => {
+    setFormData((prev) => {
+      const updated = [...prev.warranties]
+      updated.splice(index, 1)
+      return {
+        ...prev,
+        warranties: updated,
+      }
+    })
+  }
+
   const activeCustomers = customers.filter((customer) => {
-    const status = getWarrantyStatus(customer.warranty_due)
+    const { status } = deriveHardwareStatus(customer)
     return status.state !== 'expired'
   })
 
   const expiredCustomers = customers.filter((customer) => {
-    const status = getWarrantyStatus(customer.warranty_due)
+    const { status } = deriveHardwareStatus(customer)
     return status.state === 'expired'
   })
 
@@ -211,29 +330,24 @@ export default function Customers() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">點交驗收</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">教育訓練</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接回內網</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">保固狀態</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">保固日期</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">硬體保固</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">軟體保固</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredCustomers.map((customer) => {
-              const status = getWarrantyStatus(customer.warranty_due)
-              const badgeClass =
-                status.color === 'success'
-                  ? 'bg-success-100 text-success-700'
-                  : status.color === 'warning'
-                    ? 'bg-warning-100 text-warning-700'
-                    : status.color === 'danger'
-                      ? 'bg-danger-100 text-danger-700'
-                      : 'bg-gray-100 text-gray-600'
+              const { status: hardwareStatus } = deriveHardwareStatus(customer)
+              const hardwareBadgeClass = getBadgeClass(hardwareStatus)
+              const softwareSummary = customer.software_summary
+              const softwareStatus = softwareSummary?.status
+              const softwareBadgeClass = softwareStatus ? getBadgeClass(softwareStatus) : 'bg-gray-100 text-gray-600'
               const rowClass =
-                status.state === 'expired'
+                hardwareStatus.state === 'expired'
                   ? 'bg-danger-50 hover:bg-danger-100'
-                  : status.state === 'expiring'
+                  : hardwareStatus.state === 'expiring'
                     ? 'bg-warning-50 hover:bg-warning-100'
                     : 'hover:bg-gray-50'
-              const warrantyDate = customer.warranty_due ? new Date(customer.warranty_due) : null
 
               return (
               <tr key={customer.id} className={`transition-colors ${rowClass}`}>
@@ -262,16 +376,75 @@ export default function Customers() {
                     <span className="text-gray-400">未連接</span>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${badgeClass}`}>
-                    {status.label}
-                  </span>
+                <td className="px-6 py-4 align-top text-sm">
+                  <div className="space-y-2">
+                    <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${hardwareBadgeClass}`}>
+                      <span>{hardwareStatus.label}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(customer.warranties || [])
+                        .filter((warranty) => warranty.type === 'hardware')
+                        .map((warranty) => (
+                          <div
+                            key={warranty.id}
+                            className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2 text-xs text-primary-700 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold">{warranty.title || '未命名批次'}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${getBadgeClass(warranty.status || { color: 'gray' })}`}>
+                                {warranty.status?.label || hardwareStatus.label}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-primary-500">
+                              到期 {warranty.end_date ? formatDateText(warranty.end_date) : '未設定'}
+                            </div>
+                            {warranty.notes && (
+                              <div className="mt-1 text-[11px] text-primary-400">
+                                備註：{warranty.notes}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      {(customer.warranties || []).filter((warranty) => warranty.type === 'hardware').length === 0 && (
+                        <div className="text-xs text-gray-400">尚未設定硬體保固</div>
+                      )}
+                    </div>
+                  </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {warrantyDate
-                    ? warrantyDate.toLocaleDateString('zh-TW')
-                    : '-'
-                  }
+                <td className="px-6 py-4 align-top text-sm">
+                  <div className="space-y-2">
+                    <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${softwareBadgeClass}`}>
+                      <span>{softwareStatus?.label || '未設定'}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(customer.warranties || [])
+                        .filter((warranty) => warranty.type === 'software')
+                        .map((warranty) => (
+                          <div
+                            key={warranty.id}
+                            className="rounded-lg border border-success-100 bg-success-50/60 px-3 py-2 text-xs text-success-700 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold">{warranty.title || '未命名批次'}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${getBadgeClass(warranty.status || { color: 'gray' })}`}>
+                                {warranty.status?.label || softwareStatus?.label || '未設定'}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-success-500">
+                              到期 {warranty.end_date ? formatDateText(warranty.end_date) : '未設定'}
+                            </div>
+                            {warranty.notes && (
+                              <div className="mt-1 text-[11px] text-success-400">
+                                備註：{warranty.notes}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      {(customer.warranties || []).filter((warranty) => warranty.type === 'software').length === 0 && (
+                        <div className="text-xs text-gray-400">尚未設定軟體保固</div>
+                      )}
+                    </div>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <button
@@ -325,7 +498,7 @@ export default function Customers() {
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
                     placeholder="輸入公司名稱"
                   />
                 </div>
@@ -339,18 +512,8 @@ export default function Customers() {
                     required
                     value={formData.business_owner}
                     onChange={(e) => setFormData({ ...formData, business_owner: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
                     placeholder="輸入所屬業務"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">保固日期</label>
-                  <input
-                    type="date"
-                    value={formData.warranty_due || ''}
-                    onChange={(e) => setFormData({ ...formData, warranty_due: e.target.value || undefined })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
                   />
                 </div>
 
@@ -390,6 +553,94 @@ export default function Customers() {
                     <label htmlFor="internal_network_connected" className="ml-2 text-sm text-gray-700">
                       接回內網
                     </label>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4 mt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-gray-700">保固批次</h4>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addWarranty('hardware')}
+                        className="text-xs px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition"
+                      >
+                        + 新增硬體保固
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addWarranty('software')}
+                        className="text-xs px-3 py-1 rounded-full border border-success-200 text-success-600 hover:bg-success-50 transition"
+                      >
+                        + 新增軟體保固
+                      </button>
+                    </div>
+                  </div>
+
+                  {formData.warranties.length === 0 && (
+                    <p className="text-xs text-gray-500">
+                      尚未新增保固資料。可針對不同批次或軟體保固建立多筆紀錄。
+                    </p>
+                  )}
+
+                  <div className="space-y-3">
+                    {formData.warranties.map((warranty, index) => (
+                      <div key={warranty.id ?? index} className="rounded-lg border border-gray-200 bg-white shadow-sm px-4 py-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-700">保固批次 #{index + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeWarranty(index)}
+                            className="text-xs text-danger-500 hover:text-danger-700"
+                          >
+                            移除
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">類型</label>
+                            <select
+                              value={warranty.type}
+                              onChange={(e) => updateWarrantyField(index, 'type', e.target.value as 'hardware' | 'software')}
+                              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 px-3 py-2 text-sm"
+                            >
+                              <option value="hardware">硬體</option>
+                              <option value="software">軟體</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">保固名稱 / 說明</label>
+                            <input
+                              type="text"
+                              required
+                              value={warranty.title}
+                              onChange={(e) => updateWarrantyField(index, 'title', e.target.value)}
+                              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 px-3 py-2 text-sm"
+                              placeholder="例如：主系統 + 3 感測器"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">保固到期日</label>
+                            <input
+                              type="date"
+                              value={warranty.end_date || ''}
+                              onChange={(e) => updateWarrantyField(index, 'end_date', e.target.value)}
+                              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 px-3 py-2 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">備註</label>
+                          <textarea
+                            value={warranty.notes || ''}
+                            onChange={(e) => updateWarrantyField(index, 'notes', e.target.value)}
+                            rows={2}
+                            className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 px-3 py-2 text-sm"
+                            placeholder="可選填"
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

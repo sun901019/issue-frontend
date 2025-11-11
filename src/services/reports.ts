@@ -22,8 +22,11 @@ export const reportsApi = {
     return api.get('/reports/summary/', { params: { year } })
   },
   
-  getTrend: (period: string, from?: string, to?: string) => {
-    return api.get('/reports/trend/', { params: { period, from, to } })
+  getTrend: (period: string, options?: { year?: number; month?: number }) => {
+    const params: Record<string, any> = { period }
+    if (options?.year) params.year = options.year
+    if (options?.month) params.month = options.month
+    return api.get('/reports/trend/', { params })
   },
   
   getDimensions: (dim: string, metric: string, top: number = 10) => {

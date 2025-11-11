@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { issuesApi, Issue } from '../services/issues'
+import { issuesApi, Issue, WarrantyStatus } from '../services/issues'
 import CommentForm from '../components/CommentForm'
 import api from '../services/api'
 import IssueForm from '../components/IssueForm'
@@ -24,6 +24,67 @@ interface IssueDetailData extends Issue {
   attachments_count?: number
 }
 
+type IssueStatusValue = Issue['status']
+type IssuePriorityValue = Issue['priority']
+
+const STATUS_OPTIONS: Array<{
+  value: IssueStatusValue
+  label: string
+  className: string
+  description: string
+}> = [
+  {
+    value: 'Open',
+    label: '待處理',
+    className: 'status-open',
+    description: '尚未開始處理',
+  },
+  {
+    value: 'In Progress',
+    label: '處理中',
+    className: 'status-in-progress',
+    description: '正在處理這個 Issue',
+  },
+  {
+    value: 'Pending',
+    label: '暫停',
+    className: 'status-pending',
+    description: '暫時延後，等待進一步動作',
+  },
+  {
+    value: 'Closed',
+    label: '已完成',
+    className: 'status-closed',
+    description: '已完成並結案',
+  },
+]
+
+const PRIORITY_OPTIONS: Array<{
+  value: IssuePriorityValue
+  label: string
+  className: string
+  description: string
+}> = [
+  {
+    value: 'High',
+    label: '高',
+    className: 'priority-high',
+    description: '需要優先處理的事項',
+  },
+  {
+    value: 'Medium',
+    label: '中',
+    className: 'priority-medium',
+    description: '維持一般處理順序',
+  },
+  {
+    value: 'Low',
+    label: '低',
+    className: 'priority-low',
+    description: '允許延後處理的事項',
+  },
+]
+
 export default function IssueDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -34,12 +95,25 @@ export default function IssueDetail() {
   const [showCommentForm, setShowCommentForm] = useState(false)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [uploading, setUploading] = useState(false)
+  const [activePicker, setActivePicker] = useState<'status' | 'priority' | null>(null)
+  const [updatingField, setUpdatingField] = useState<'status' | 'priority' | null>(null)
+  const pickerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (id) {
       loadIssue()
     }
   }, [id])
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setActivePicker(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const loadIssue = async () => {
     setLoading(true)
@@ -108,6 +182,50 @@ export default function IssueDetail() {
     }
   }
 
+  const handleQuickUpdate = async (
+    field: 'status' | 'priority',
+    value: IssueStatusValue | IssuePriorityValue
+  ) => {
+    if (!issue) return
+
+    if (field === 'status' && value === issue.status) {
+      setActivePicker(null)
+      return
+    }
+    if (field === 'priority' && value === issue.priority) {
+      setActivePicker(null)
+      return
+    }
+
+    setUpdatingField(field)
+    try {
+      const payload =
+        field === 'status'
+          ? { status: value as IssueStatusValue }
+          : { priority: value as IssuePriorityValue }
+
+      await issuesApi.update(issue.id, payload)
+      setIssue((prev) =>
+        prev
+          ? ({
+              ...prev,
+              ...payload,
+            } as IssueDetailData)
+          : prev
+      )
+      setActivePicker(null)
+    } catch (error: any) {
+      console.error('Failed to update issue quickly:', error)
+      const message =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        '更新失敗，請稍後再試'
+      alert(message)
+    } finally {
+      setUpdatingField(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-center py-12">
@@ -130,61 +248,135 @@ export default function IssueDetail() {
     )
   }
 
-  const warrantyStatus = getWarrantyStatus(issue.customer_warranty_due)
-  const warrantyBadgeClass =
-    warrantyStatus.color === 'success'
-      ? 'bg-success-100 text-success-700'
-      : warrantyStatus.color === 'warning'
-        ? 'bg-warning-100 text-warning-700'
-        : warrantyStatus.color === 'danger'
-          ? 'bg-danger-100 text-danger-700'
-          : 'bg-gray-100 text-gray-600'
+  type WarrantyStatusLike = Pick<WarrantyStatus, 'state' | 'color'> | ReturnType<typeof getWarrantyStatus> | undefined | null
+
+  const getWarrantyBadge = (status: WarrantyStatusLike) => {
+    const state = status?.state
+    if (state === 'expired') {
+      return { label: '已過保', className: 'bg-danger-100 text-danger-700' }
+    }
+    if (state === 'none' || !state) {
+      return { label: '未設定', className: 'bg-gray-100 text-gray-600' }
+    }
+    if (state === 'expiring') {
+      return { label: '保固中', className: 'bg-warning-100 text-warning-700' }
+    }
+    return { label: '保固中', className: 'bg-success-100 text-success-700' }
+  }
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '-'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleDateString('zh-TW')
+  }
+
+  const getStatusBadgeClass = (status?: WarrantyStatus) => {
+    if (!status) return 'bg-gray-100 text-gray-600'
+    switch (status.color) {
+      case 'success':
+        return 'bg-success-100 text-success-700'
+      case 'warning':
+        return 'bg-warning-100 text-warning-700'
+      case 'danger':
+        return 'bg-danger-100 text-danger-700'
+      default:
+        return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  const getWarrantyLabel = (status?: WarrantyStatus) => {
+    if (!status || status.state === 'none') return '未設定'
+    return status.state === 'expired' ? '已過保' : '保固中'
+  }
+
+  const hardwareStatus =
+    issue.hardware_warranty_status ||
+    (issue.customer_warranty_due ? getWarrantyStatus(issue.customer_warranty_due) : undefined)
+  const softwareStatus = issue.software_warranty_status
+  const hardwareBadge = getWarrantyBadge(hardwareStatus)
+  const softwareBadge = getWarrantyBadge(softwareStatus)
+  const currentStatusOption = STATUS_OPTIONS.find((item) => item.value === issue.status)
+  const currentPriorityOption = PRIORITY_OPTIONS.find((item) => item.value === issue.priority)
 
   return (
     <div className="space-y-6">
+      <button
+        onClick={() => navigate('/issues')}
+        className="inline-flex items-center gap-2 text-sm font-medium text-primary-600 hover:text-primary-800 transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        返回列表
+      </button>
+
       {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <button
-            onClick={() => navigate('/issues')}
-            className="text-primary-600 hover:text-primary-800 font-medium mb-2 flex items-center"
-          >
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            返回列表
-          </button>
-          <h2 className="text-3xl font-bold text-gray-900">Issue #{issue.id}</h2>
-          <h3 className="text-xl text-gray-700 mt-1">{issue.title}</h3>
-          <div className="flex items-center flex-wrap gap-2 mt-3">
-            {issue.customer_name && (
-              <span className="flex items-center text-sm text-gray-500">
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-r from-white via-primary-50/60 to-white px-6 py-6 shadow-sm">
+        <div className="pointer-events-none absolute -right-16 -top-24 h-48 w-48 rounded-full bg-primary-100 blur-3xl opacity-60" />
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 relative">
+          <div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-3 py-1 text-primary-600 shadow-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7" />
                 </svg>
-                {issue.customer_name}
+                {issue.customer_name || '未指定客戶'}
               </span>
-            )}
-            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${warrantyBadgeClass}`}>
-              {warrantyStatus.label}
-            </span>
-            {warrantyStatus.dueDate && (
-              <span className="text-xs text-gray-500">
-                到期日 {warrantyStatus.dueDate.toLocaleDateString('zh-TW')}
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/60 px-3 py-1 text-gray-500 shadow-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 12h10M7 17h6" />
+                </svg>
+                ID {issue.id}
               </span>
-            )}
+            </div>
+            <h1 className="mt-4 text-2xl font-bold text-gray-900 tracking-tight">{issue.title}</h1>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {currentStatusOption && (
+                <span className={`inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-1 text-sm font-medium shadow-sm ${currentStatusOption.className}`}>
+                  <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" />
+                  </svg>
+                  {currentStatusOption.label}
+                </span>
+              )}
+              {currentPriorityOption && (
+                <span className={`inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-1 text-sm font-medium shadow-sm ${currentPriorityOption.className}`}>
+                  <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6l3 6h-6l3 6" />
+                  </svg>
+                  優先級 {currentPriorityOption.label}
+                </span>
+              )}
+              <span className={`inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-1 text-sm font-medium shadow-sm ${hardwareBadge.className}`}>
+                <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16M4 7v10a2 2 0 002 2h12a2 2 0 002-2V7M9 7v-2a3 3 0 016 0v2" />
+                </svg>
+                硬體 {hardwareBadge.label}
+              </span>
+              <span className={`inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-1 text-sm font-medium shadow-sm ${softwareBadge.className}`}>
+                <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 11-4 0M6 10v10h12V10" />
+                </svg>
+                軟體 {softwareBadge.label}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="flex space-x-2">
-          <button 
-            onClick={() => setShowEditForm(true)}
-            className="btn-secondary"
-          >
-            <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            編輯
-          </button>
+          <div className="flex flex-col items-end gap-3">
+            <button
+              onClick={() => setShowEditForm(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-primary-200 bg-white px-4 py-2 text-sm font-medium text-primary-600 shadow-sm transition-colors hover:bg-primary-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              編輯
+            </button>
+            <div className="rounded-xl border border-white/70 bg-white/80 px-4 py-2 text-right text-xs text-gray-500 shadow-sm">
+              <div>建立於 {new Date(issue.created_at).toLocaleString('zh-TW')}</div>
+              <div>更新於 {new Date(issue.updated_at).toLocaleString('zh-TW')}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -360,33 +552,147 @@ export default function IssueDetail() {
         {/* Right Column - Sidebar */}
         <div className="space-y-6">
           {/* Status Card */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">狀態資訊</h4>
-            <div className="space-y-3">
-              <div>
-                <span className="text-sm text-gray-500">狀態</span>
-                <div className="mt-1">
-                  {issue.status === 'Open' && <span className="status-open">待處理</span>}
-                  {issue.status === 'In Progress' && <span className="status-in-progress">處理中</span>}
-                  {issue.status === 'Closed' && <span className="status-closed">已完成</span>}
-                  {issue.status === 'Pending' && <span className="status-pending">暫停</span>}
+          <div className="card" ref={pickerRef}>
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50 text-primary-600 shadow-sm">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-gray-900">狀態資訊</h4>
+            </div>
+            <div className="space-y-4">
+              <div className="relative">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" />
+                  </svg>
+                  狀態
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActivePicker(activePicker === 'status' ? null : 'status')}
+                  className="mt-2 inline-flex w-full items-center justify-between rounded-lg border border-primary-100 bg-white/80 px-3 py-2 text-sm font-medium text-primary-700 shadow-sm transition hover:bg-primary-50"
+                >
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                      currentStatusOption?.className || 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    <span>{currentStatusOption?.label || '未設定'}</span>
+                  </span>
+                  <svg
+                    className={`w-4 h-4 transition-transform ${activePicker === 'status' ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <p className="mt-2 text-xs text-gray-500">
+                  {currentStatusOption?.description || '設定處理狀態，方便追蹤案件進度'}
+                </p>
+                {activePicker === 'status' && (
+                  <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl">
+                    {STATUS_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleQuickUpdate('status', option.value)}
+                        className={`flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition hover:bg-primary-50 ${
+                          issue.status === option.value ? 'bg-primary-50' : ''
+                        } ${updatingField === 'status' ? 'pointer-events-none opacity-70' : ''}`}
+                      >
+                        <span className="flex w-full items-center justify-between">
+                          <span className="text-sm font-medium text-gray-800">{option.label}</span>
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-sm ${option.className}`}>
+                            {option.label}
+                          </span>
+                        </span>
+                        <span className="mt-1 text-[11px] text-gray-500">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8l3 8H9l3-8z" />
+                  </svg>
+                  優先級
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActivePicker(activePicker === 'priority' ? null : 'priority')}
+                  className="mt-2 inline-flex w-full items-center justify-between rounded-lg border border-primary-100 bg-white/80 px-3 py-2 text-sm font-medium text-primary-700 shadow-sm transition hover:bg-primary-50"
+                >
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+                      currentPriorityOption?.className || 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    <span>{currentPriorityOption?.label || '未設定'}</span>
+                  </span>
+                  <svg
+                    className={`w-4 h-4 transition-transform ${activePicker === 'priority' ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <p className="mt-2 text-xs text-gray-500">
+                  {currentPriorityOption?.description || '設定優先級，讓團隊知道先後順序'}
+                </p>
+                {activePicker === 'priority' && (
+                  <div className="absolute right-0 z-20 mt-2 w-56 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl">
+                    {PRIORITY_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleQuickUpdate('priority', option.value)}
+                        className={`flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition hover:bg-primary-50 ${
+                          issue.priority === option.value ? 'bg-primary-50' : ''
+                        } ${updatingField === 'priority' ? 'pointer-events-none opacity-70' : ''}`}
+                      >
+                        <span className="flex w-full items-center justify-between">
+                          <span className="text-sm font-medium text-gray-800">優先級 {option.label}</span>
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-sm ${option.className}`}>
+                            {option.label}
+                          </span>
+                        </span>
+                        <span className="mt-1 text-[11px] text-gray-500">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-100 pt-4">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+                  </svg>
+                  類別
+                </span>
+                <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
+                  {issue.category || '-'}
                 </div>
               </div>
               <div>
-                <span className="text-sm text-gray-500">優先級</span>
-                <div className="mt-1">
-                  {issue.priority === 'High' && <span className="priority-high">高</span>}
-                  {issue.priority === 'Medium' && <span className="priority-medium">中</span>}
-                  {issue.priority === 'Low' && <span className="priority-low">低</span>}
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7l6 6-6 6M21 7l-6 6 6 6" />
+                  </svg>
+                  來源
+                </span>
+                <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
+                  {issue.source || '-'}
                 </div>
-              </div>
-              <div>
-                <span className="text-sm text-gray-500">類別</span>
-                <div className="mt-1 text-gray-900">{issue.category}</div>
-              </div>
-              <div>
-                <span className="text-sm text-gray-500">來源</span>
-                <div className="mt-1 text-gray-900">{issue.source}</div>
               </div>
             </div>
           </div>
@@ -413,15 +719,97 @@ export default function IssueDetail() {
               </div>
               <div>
                 <span className="text-gray-500">保固狀態</span>
-                <div className="mt-1 flex items-center space-x-2">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${warrantyBadgeClass}`}>
-                    {warrantyStatus.label}
-                  </span>
-                  {warrantyStatus.dueDate && (
-                    <span className="text-xs text-gray-500">
-                      到期日 {warrantyStatus.dueDate.toLocaleDateString('zh-TW')}
-                    </span>
-                  )}
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 uppercase tracking-wide">硬體</span>
+                      <span className={`px-2 inline-flex text-xs font-medium rounded-full ${hardwareBadge.className}`}>
+                        {hardwareBadge.label}
+                      </span>
+                    </div>
+                    {issue.hardware_warranties && issue.hardware_warranties.length > 0 ? (
+                      <ul className="mt-2 space-y-2 text-xs text-gray-600">
+                        {issue.hardware_warranties.map((warranty) => {
+                          const isSelected = issue.warranty_info?.id === warranty.id
+                          return (
+                            <li
+                              key={`hardware-${warranty.id}`}
+                              className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 ${
+                                isSelected
+                                  ? 'border-primary-200 bg-primary-50 text-primary-700'
+                                  : 'border-gray-200 bg-white text-gray-700'
+                              }`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <span className="block truncate text-sm font-medium text-gray-700">
+                                  {warranty.title}
+                                </span>
+                                <span className="mt-1 block text-[11px] text-gray-500">
+                                  到期日 {formatDate(warranty.end_date)}
+                                </span>
+                                {warranty.notes && (
+                                  <span className="mt-1 block text-[11px] text-gray-400">
+                                    備註：{warranty.notes}
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(
+                                  warranty.status
+                                )}`}
+                              >
+                                {getWarrantyLabel(warranty.status)}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-xs text-gray-500">尚未設定硬體保固</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 uppercase tracking-wide">軟體</span>
+                      <span className={`px-2 inline-flex text-xs font-medium rounded-full ${softwareBadge.className}`}>
+                        {softwareBadge.label}
+                      </span>
+                    </div>
+                    {issue.software_warranties && issue.software_warranties.length > 0 ? (
+                      <ul className="mt-2 space-y-2 text-xs text-gray-600">
+                        {issue.software_warranties.map((warranty) => (
+                          <li
+                            key={`software-${warranty.id}`}
+                            className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-700"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <span className="block truncate text-sm font-medium text-gray-700">
+                                {warranty.title}
+                              </span>
+                              <span className="mt-1 block text-[11px] text-gray-500">
+                                到期日 {formatDate(warranty.end_date)}
+                              </span>
+                              {warranty.notes && (
+                                <span className="mt-1 block text-[11px] text-gray-400">
+                                  備註：{warranty.notes}
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(
+                                warranty.status
+                              )}`}
+                            >
+                              {getWarrantyLabel(warranty.status)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-xs text-gray-500">尚未設定軟體保固</p>
+                    )}
+                  </div>
                 </div>
               </div>
               <div>

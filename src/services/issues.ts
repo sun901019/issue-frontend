@@ -1,5 +1,29 @@
 import api from './api'
 
+export interface WarrantyStatus {
+  state: 'none' | 'active' | 'expiring' | 'expired'
+  label: string
+  days_left?: number | null
+  color: 'gray' | 'success' | 'warning' | 'danger'
+}
+
+export interface WarrantyInfo {
+  id: number
+  title: string
+  type: 'hardware' | 'software'
+  end_date?: string | null
+  status?: WarrantyStatus
+}
+
+export interface IssueCustomerWarranty {
+  id: number
+  type: 'hardware' | 'software'
+  title: string
+  end_date?: string | null
+  notes?: string
+  status?: WarrantyStatus
+}
+
 export interface Issue {
   id: number
   title: string
@@ -13,12 +37,18 @@ export interface Issue {
   customer?: number
   customer_name?: string
   customer_warranty_due?: string | null
+  warranty?: number | null
+  warranty_info?: WarrantyInfo | null
   assignee?: number
   assignee_name?: string
   reporter?: number
   reporter_name?: string
   due_date?: string
   warranty_due?: string
+  hardware_warranty_status?: WarrantyStatus
+  software_warranty_status?: WarrantyStatus
+  hardware_warranties?: IssueCustomerWarranty[]
+  software_warranties?: IssueCustomerWarranty[]
   first_response_at?: string
   resolved_at?: string
   created_at: string

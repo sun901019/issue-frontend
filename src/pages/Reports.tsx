@@ -29,7 +29,6 @@ ChartJS.register(
 interface TrendData {
   period: string
   created: number
-  closed: number
 }
 
 interface DimensionData {
@@ -53,10 +52,13 @@ export default function Reports() {
   const [dimension, setDimension] = useState('customer')
   const [metric, setMetric] = useState('count')
   const [chartType, setChartType] = useState<'line' | 'bar'>('line')
+  const currentDate = new Date()
+  const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1)
 
   useEffect(() => {
     loadReports()
-  }, [period, dimension, metric])
+  }, [period, dimension, metric, selectedYear, selectedMonth])
 
   const loadReports = async () => {
     setLoading(true)
@@ -66,7 +68,12 @@ export default function Reports() {
       setKpis(kpiRes.data)
 
       // 載入趨勢資料
-      const trendRes = await reportsApi.getTrend(period)
+      const trendRes = await reportsApi.getTrend(
+        period,
+        period === 'month'
+          ? { year: selectedYear }
+          : { year: selectedYear, month: selectedMonth }
+      )
       setTrendData(trendRes.data.data)
 
       // 載入維度分析
@@ -88,14 +95,6 @@ export default function Reports() {
         data: trendData.map(d => d.created),
         borderColor: 'rgb(59, 130, 246)', // primary-500
         backgroundColor: 'rgba(59, 130, 246, 0.2)',
-        fill: true,
-        tension: 0.4,
-      },
-      {
-        label: '完成',
-        data: trendData.map(d => d.closed),
-        borderColor: 'rgb(16, 185, 129)', // success-500
-        backgroundColor: 'rgba(16, 185, 129, 0.2)',
         fill: true,
         tension: 0.4,
       },
@@ -152,6 +151,16 @@ export default function Reports() {
   const weekStart = new Date(now.setDate(now.getDate() - now.getDay()))
   weekStart.setHours(0, 0, 0, 0)
   
+  const monthOptions = Array.from({ length: 12 }, (_, index) => ({
+    value: index + 1,
+    label: `${index + 1} 月`,
+  }))
+
+  const yearOptions = Array.from({ length: 5 }, (_, index) => {
+    const year = currentDate.getFullYear() - index
+    return { value: year, label: `${year} 年` }
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -237,9 +246,37 @@ export default function Reports() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* 主圖表區域（3/4） */}
         <div className="lg:col-span-3 card">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">趨勢分析</h3>
-            <div className="flex items-center space-x-2">
+          <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">趨勢分析</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  {yearOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {(period === 'week' || period === 'day') && (
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    {monthOptions.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
@@ -284,7 +321,7 @@ export default function Reports() {
                   },
                   title: {
                     display: true,
-                    text: 'Issue 建立與完成趨勢',
+                    text: 'Issue 建立趨勢',
                     font: { size: 16 },
                   },
                   tooltip: {
@@ -316,7 +353,7 @@ export default function Reports() {
                   },
                   title: {
                     display: true,
-                    text: 'Issue 建立與完成趨勢',
+                    text: 'Issue 建立趨勢',
                     font: { size: 16 },
                   },
                 },

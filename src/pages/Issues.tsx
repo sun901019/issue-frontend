@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { issuesApi, Issue, IssueListParams } from '../services/issues'
+import { issuesApi, Issue, IssueListParams, WarrantyStatus } from '../services/issues'
 import { useFilterStore } from '../stores/filter'
 import IssueForm from '../components/IssueForm'
 import FilterPanel from '../components/FilterPanel'
@@ -20,8 +20,7 @@ export default function Issues() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [showForm, setShowForm] = useState(false)
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
-  const [exporting, setExporting] = useState(false)
+  const [viewMode] = useState<ViewMode>('list')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [sortField, setSortField] = useState<SortField | null>(null)
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -176,82 +175,6 @@ export default function Issues() {
     }
   }
 
-  const handleExport = async () => {
-    setExporting(true)
-    try {
-      // 使用當前篩選條件匯出
-      const params: any = { format: 'xlsx' }
-
-      if (filter.status.length > 0) {
-        params.status = filter.status
-      }
-      if (filter.priority.length > 0) {
-        params.priority = filter.priority
-      }
-      if (filter.category.length > 0) {
-        params.category = filter.category
-      }
-      if (filter.source.length > 0) {
-        params.source = filter.source
-      }
-      if (filter.assigneeId) {
-        params.assignee_id = filter.assigneeId
-      }
-      if (filter.search) {
-        params.q = filter.search
-      }
-      if (filter.dateFrom) {
-        params.from = filter.dateFrom
-      }
-      if (filter.dateTo) {
-        params.to = filter.dateTo
-      }
-
-      const response = await issuesApi.export(params)
-      
-      // 建立下載連結
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `issues_${new Date().toISOString().split('T')[0]}.xlsx`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Failed to export issues:', error)
-      alert('匯出失敗，請稍後再試')
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    try {
-      const response = await issuesApi.import(file)
-      
-      if (response.data.success) {
-        alert(`匯入成功！\n成功：${response.data.success_count} 筆\n失敗：${response.data.error_count} 筆`)
-        if (response.data.errors && response.data.errors.length > 0) {
-          console.warn('匯入錯誤：', response.data.errors)
-        }
-        // 重新載入列表
-        loadIssues()
-      } else {
-        alert(`匯入失敗：${response.data.message || '未知錯誤'}`)
-      }
-    } catch (error: any) {
-      console.error('Failed to import issues:', error)
-      const errorMsg = error.response?.data?.error || '匯入失敗，請檢查檔案格式'
-      alert(errorMsg)
-    } finally {
-      // 清空 input，允許重新選擇相同檔案
-      e.target.value = ''
-    }
-  }
   
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -326,6 +249,22 @@ export default function Issues() {
     )
   }
 
+  type WarrantyStatusLike = Pick<WarrantyStatus, 'state' | 'color'> | ReturnType<typeof getWarrantyStatus> | undefined | null
+
+  const getWarrantyBadge = (status: WarrantyStatusLike) => {
+    const state = status?.state
+    if (state === 'expired') {
+      return { label: '已過保', className: 'bg-danger-100 text-danger-700' }
+    }
+    if (state === 'none' || !state) {
+      return { label: '未設定', className: 'bg-gray-100 text-gray-600' }
+    }
+    if (state === 'expiring') {
+      return { label: '保固中', className: 'bg-warning-100 text-warning-700' }
+    }
+    return { label: '保固中', className: 'bg-success-100 text-success-700' }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -340,28 +279,6 @@ export default function Issues() {
           >
             篩選
           </button>
-          <div className="flex border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              清單
-            </button>
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === 'kanban'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              看板
-            </button>
-          </div>
           {selectedIds.length > 0 && (
             <div className="flex items-center space-x-2 px-3 py-2 bg-primary-50 rounded-lg border border-primary-200">
               <span className="text-sm text-primary-700 font-medium">
@@ -401,22 +318,7 @@ export default function Issues() {
               </button>
             </div>
           )}
-          <label className="btn-secondary cursor-pointer">
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={handleImport}
-              className="hidden"
-            />
-            匯入
-          </label>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="btn-secondary disabled:opacity-50"
-          >
-            {exporting ? '匯出中...' : '匯出'}
-          </button>
+          
           <button
             onClick={() => setShowForm(true)}
             className="btn-success"
@@ -498,28 +400,23 @@ export default function Issues() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-              {issues.map((issue) => {
-                const warrantyStatus = getWarrantyStatus(issue.customer_warranty_due)
-                const badgeClass =
-                  warrantyStatus.color === 'success'
-                    ? 'bg-success-100 text-success-700'
-                    : warrantyStatus.color === 'warning'
-                      ? 'bg-warning-100 text-warning-700'
-                      : warrantyStatus.color === 'danger'
-                        ? 'bg-danger-100 text-danger-700'
-                        : 'bg-gray-100 text-gray-600'
-                const isSelected = selectedIds.includes(issue.id)
-                const rowClass = isSelected
-                  ? 'bg-primary-50'
-                  : warrantyStatus.state === 'expired'
-                    ? 'bg-danger-50 hover:bg-danger-100'
-                    : warrantyStatus.state === 'expiring'
-                      ? 'bg-warning-50 hover:bg-warning-100'
-                      : 'hover:bg-gray-50'
-                const warrantyDateStr = warrantyStatus.dueDate
-                  ? warrantyStatus.dueDate.toLocaleDateString('zh-TW')
-                  : null
-                const createdDate = new Date(issue.created_at).toLocaleDateString('zh-TW')
+                              {issues.map((issue) => {
+                                const hardwareStatus =
+                                  issue.hardware_warranty_status ||
+                                  (issue.customer_warranty_due ? getWarrantyStatus(issue.customer_warranty_due) : undefined)
+                                const softwareStatus = issue.software_warranty_status
+                                const hardwareBadge = getWarrantyBadge(hardwareStatus)
+                                const softwareBadge = getWarrantyBadge(softwareStatus)
+                                const rowBadgeState = hardwareStatus?.state || softwareStatus?.state
+                                const isSelected = selectedIds.includes(issue.id)
+                                const rowClass = isSelected
+                                  ? 'bg-primary-50'
+                                  : rowBadgeState === 'expired'
+                                    ? 'bg-danger-50 hover:bg-danger-100'
+                                    : rowBadgeState === 'expiring'
+                                      ? 'bg-warning-50 hover:bg-warning-100'
+                                      : 'hover:bg-gray-50'
+                                const createdDate = new Date(issue.created_at).toLocaleDateString('zh-TW')
 
                 return (
                   <tr
@@ -561,21 +458,19 @@ export default function Issues() {
                     <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
                       {issue.assignee_name || '-'}
                     </td>
-                    <td className="px-4 py-3 align-middle text-sm">
-                      <div className="flex items-center gap-3 text-left">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass}`}>
-                          {warrantyStatus.label}
+                    <td className="px-4 py-3 align-middle text-sm text-gray-700">
+                      <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-2">
+                        <span className="text-xs text-gray-500 text-right pr-1">硬體</span>
+                        <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${hardwareBadge.className}`}>
+                          {hardwareBadge.label}
                         </span>
-                        <div className="flex flex-col gap-0.5 text-xs leading-tight text-gray-600">
-                          {warrantyDateStr && <span>到期 {warrantyDateStr}</span>}
-                          {warrantyStatus.state === 'expiring' && typeof warrantyStatus.daysLeft === 'number' && (
-                            <span className="text-warning-600">剩餘 {warrantyStatus.daysLeft} 天</span>
-                          )}
-                          {warrantyStatus.state === 'expired' && <span className="text-danger-600">已過保</span>}
-                        </div>
+                        <span className="text-xs text-gray-500 text-right pr-1">軟體</span>
+                        <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${softwareBadge.className}`}>
+                          {softwareBadge.label}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 align-middle text-sm text-gray-600">
+                    <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
                       {createdDate}
                     </td>
                     <td className="px-3 py-3 align-middle text-sm">

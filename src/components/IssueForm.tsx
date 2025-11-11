@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { issuesApi, Issue } from '../services/issues'
+import { issuesApi, Issue, WarrantyStatus } from '../services/issues'
 import api from '../services/api'
 
 interface IssueFormProps {
@@ -11,6 +11,31 @@ interface IssueFormProps {
 interface Dictionary {
   value: string
   label: string
+}
+
+interface CustomerWarranty {
+  id?: number
+  type: 'hardware' | 'software'
+  title: string
+  end_date?: string | null
+  status?: WarrantyStatus
+  notes?: string
+}
+
+interface WarrantySummary {
+  count: number
+  next_id?: number | null
+  next_title?: string | null
+  next_due_date?: string | null
+  status: WarrantyStatus
+}
+
+interface CustomerOption {
+  id: number
+  name: string
+  warranties?: CustomerWarranty[]
+  hardware_summary?: WarrantySummary
+  software_summary?: WarrantySummary
 }
 
 export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps) {
@@ -33,8 +58,9 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
   })
   
   const [users, setUsers] = useState<Array<{ id: number; username: string }>>([])
-  const [customers, setCustomers] = useState<Array<{ id: number; name: string }>>([])
+  const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | undefined>(issue?.customer)
+  const [selectedWarrantyId, setSelectedWarrantyId] = useState<number | undefined>(issue?.warranty || undefined)
   
   const [dictionaries, setDictionaries] = useState<{
     status?: Dictionary[]
@@ -79,15 +105,63 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
       })
   }, [])
   
-  // 當選擇客戶時，自動填充標題
+  // 當選擇客戶時，自動填充標題並預選保固
   useEffect(() => {
-    if (selectedCustomerId) {
-      const customer = customers.find(c => c.id === selectedCustomerId)
-      if (customer) {
-        setFormData(prev => ({ ...prev, title: customer.name }))
-      }
+    if (!selectedCustomerId) {
+      setSelectedWarrantyId(undefined)
+      return
     }
-  }, [selectedCustomerId, customers])
+
+    const customer = customers.find(c => c.id === selectedCustomerId)
+    if (!customer) return
+
+    setFormData(prev => ({ ...prev, title: customer.name }))
+
+    const hardwareWarranties = customer.warranties?.filter(w => w.type === 'hardware') || []
+    const hasCurrentWarranty = hardwareWarranties.some(w => w.id === selectedWarrantyId)
+    if (!hasCurrentWarranty) {
+      const defaultWarrantyId = customer.hardware_summary?.next_id || hardwareWarranties[0]?.id
+      setSelectedWarrantyId(defaultWarrantyId || undefined)
+    }
+  }, [selectedCustomerId, customers, selectedWarrantyId])
+
+  const selectedCustomer = selectedCustomerId
+    ? customers.find(c => c.id === selectedCustomerId)
+    : undefined
+  const hardwareWarranties = selectedCustomer?.warranties?.filter(w => w.type === 'hardware') || []
+  const softwareWarranties = selectedCustomer?.warranties?.filter(w => w.type === 'software') || []
+  const selectedWarranty = hardwareWarranties.find(w => w.id === selectedWarrantyId)
+
+  const baseFieldClass =
+    'block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 placeholder:text-gray-400'
+  const selectClass = `${baseFieldClass}`
+  const textareaClass = `${baseFieldClass} min-h-[120px] resize-vertical`
+
+  const getStatusBadgeClass = (status?: WarrantyStatus) => {
+    if (!status) return 'bg-gray-100 text-gray-600'
+    switch (status.color) {
+      case 'success':
+        return 'bg-success-100 text-success-700'
+      case 'warning':
+        return 'bg-warning-100 text-warning-700'
+      case 'danger':
+        return 'bg-danger-100 text-danger-700'
+      default:
+        return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  const getWarrantyLabel = (status?: WarrantyStatus) => {
+    if (!status || status.state === 'none') return '未設定'
+    return status.state === 'expired' ? '已過保' : '保固中'
+  }
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '-'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleDateString('zh-TW')
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -101,6 +175,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
         priority: formData.priority as 'Low' | 'Medium' | 'High',
         status: formData.status as 'Open' | 'In Progress' | 'Closed' | 'Pending',
         customer: selectedCustomerId, // 關聯客戶
+        warranty: selectedWarrantyId || null,
       }
       
       if (issue) {
@@ -139,7 +214,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
             const customerId = e.target.value ? Number(e.target.value) : undefined
             setSelectedCustomerId(customerId)
           }}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+          className={`mt-1 ${selectClass}`}
         >
           <option value="">請選擇客戶</option>
           {customers.map((customer) => (
@@ -150,20 +225,70 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
         </select>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          標題 <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          required
-          value={formData.title}
-          readOnly
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-50 px-3 py-2 cursor-not-allowed"
-          placeholder="選擇客戶後自動填充"
-        />
-        <p className="mt-1 text-xs text-gray-500">標題將根據選擇的客戶自動填充，無法手動編輯</p>
-      </div>
+      {selectedCustomer && (
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-gray-700">保固資訊</h4>
+            {selectedCustomer.hardware_summary?.next_due_date && (
+              <span className="text-xs text-gray-500">
+                最近到期：{formatDate(selectedCustomer.hardware_summary.next_due_date)}
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                硬體保固批次
+              </label>
+              {hardwareWarranties.length > 0 ? (
+                <select
+                  value={selectedWarrantyId || ''}
+                  onChange={(e) => setSelectedWarrantyId(e.target.value ? Number(e.target.value) : undefined)}
+                  className={`${selectClass}`}
+                >
+                  {hardwareWarranties.map((warranty) => (
+                    <option key={warranty.id} value={warranty.id}>
+                      {warranty.title}（到期 {formatDate(warranty.end_date)}）
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs text-gray-500">尚未設定硬體保固</p>
+              )}
+
+              {selectedWarranty && (
+                <div className="mt-2 text-xs text-gray-600 space-y-1">
+                  <div className={`inline-flex items-center px-2 py-0.5 rounded-full ${getStatusBadgeClass(selectedWarranty.status)}`}>
+                    {getWarrantyLabel(selectedWarranty.status)}
+                  </div>
+                  <div>到期日：{formatDate(selectedWarranty.end_date)}</div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                軟體保固
+              </label>
+              {softwareWarranties.length > 0 ? (
+                <ul className="space-y-2 text-xs text-gray-600">
+                  {softwareWarranties.map((warranty) => (
+                    <li key={warranty.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+                      <div className="text-gray-700">{warranty.title}</div>
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${getStatusBadgeClass(warranty.status)}`}>
+                        {getWarrantyLabel(warranty.status)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-gray-500">尚未設定軟體保固</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -174,7 +299,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
           rows={4}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+          className={`mt-1 ${textareaClass}`}
           placeholder="輸入 Issue 詳細描述"
         />
       </div>
@@ -188,7 +313,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
             required
             value={formData.category}
             onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+            className={`mt-1 ${selectClass}`}
           >
             <option value="">請選擇類別</option>
             {dictionaries?.category?.map((item) => (
@@ -207,7 +332,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
             required
             value={formData.priority}
             onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+            className={`mt-1 ${selectClass}`}
           >
             {dictionaries?.priority?.map((item) => (
               <option key={item.value} value={item.value}>
@@ -225,7 +350,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
             required
             value={formData.status}
             onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+            className={`mt-1 ${selectClass}`}
           >
             {dictionaries?.status?.map((item) => (
               <option key={item.value} value={item.value}>
@@ -243,7 +368,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
             required
             value={formData.source}
             onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+            className={`mt-1 ${selectClass}`}
           >
             <option value="">請選擇來源</option>
             {dictionaries?.source?.map((item) => (
@@ -265,7 +390,7 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
             ...formData, 
             assignee: e.target.value ? Number(e.target.value) : undefined 
           })}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2"
+          className={`mt-1 ${selectClass}`}
         >
           <option value="">未指派</option>
           {users.map((user) => (
