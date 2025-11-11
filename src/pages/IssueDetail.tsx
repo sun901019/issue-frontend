@@ -532,7 +532,7 @@ export default function IssueDetail() {
         <div className="lg:col-span-2 space-y-6">
           {/* Description */}
           <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">描述</h4>
+            <h4 className="text-lg font-semibold text-gray-900 mb-4">問題描述</h4>
             <p className="text-gray-700 whitespace-pre-wrap">{issue.description}</p>
           </div>
 

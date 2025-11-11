@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { issuesApi, Issue, IssueListParams, WarrantyStatus } from '../services/issues'
 import { useFilterStore } from '../stores/filter'
@@ -25,6 +25,9 @@ export default function Issues() {
   const [sortField, setSortField] = useState<SortField | null>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [showFilterDrawer, setShowFilterDrawer] = useState(false)
+  const [expandedIssue, setExpandedIssue] = useState<number | null>(null)
+  const [expandedDetails, setExpandedDetails] = useState<Record<number, Issue | undefined>>({})
+  const [loadingDetailId, setLoadingDetailId] = useState<number | null>(null)
 
   useEffect(() => {
     loadIssues()
@@ -185,6 +188,27 @@ export default function Issues() {
       setSortField(field)
       setSortOrder('desc')
     }
+  }
+
+  const toggleIssueDetail = async (issueId: number) => {
+    if (expandedIssue === issueId) {
+      setExpandedIssue(null)
+      return
+    }
+
+    if (!expandedDetails[issueId]) {
+      setLoadingDetailId(issueId)
+      try {
+        const res = await issuesApi.get(issueId)
+        setExpandedDetails((prev) => ({ ...prev, [issueId]: res.data }))
+      } catch (error) {
+        console.error('Failed to load issue detail:', error)
+      } finally {
+        setLoadingDetailId(null)
+      }
+    }
+
+    setExpandedIssue(issueId)
   }
   
   const handleSelectAll = (checked: boolean) => {
@@ -419,77 +443,101 @@ export default function Issues() {
                                 const createdDate = new Date(issue.created_at).toLocaleDateString('zh-TW')
 
                 return (
-                  <tr
-                    key={issue.id}
-                    className={`transition-colors ${rowClass}`}
-                  >
-                    <td className="px-3 py-3 align-middle">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => handleSelectOne(issue.id, e.target.checked)}
-                        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                    </td>
-                    <td className="px-4 py-3 align-middle text-sm text-gray-900">
-                      <div className="font-medium text-base leading-snug truncate">{issue.customer_name || issue.title || '-'}</div>
-                      {issue.project_name && (
-                        <div className="mt-0.5 text-xs text-gray-500 leading-snug truncate" title={issue.project_name}>
-                          {issue.project_name}
+                  <Fragment key={issue.id}>
+                    <tr
+                      className={`transition-colors ${rowClass}`}
+                    >
+                      <td className="px-3 py-3 align-middle">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleSelectOne(issue.id, e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                      </td>
+                      <td className="px-4 py-3 align-middle text-sm text-gray-900">
+                        <div className="font-medium text-base leading-snug truncate">{issue.customer_name || issue.title || '-'}</div>
+                        {issue.project_name && (
+                          <div className="mt-0.5 text-xs text-gray-500 leading-snug truncate" title={issue.project_name}>
+                            {issue.project_name}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 align-middle text-center">
+                        {issue.status === 'Open' && <span className="status-open">待處理</span>}
+                        {issue.status === 'In Progress' && <span className="status-in-progress">處理中</span>}
+                        {issue.status === 'Closed' && <span className="status-closed">已完成</span>}
+                        {issue.status === 'Pending' && <span className="status-pending">暫停</span>}
+                      </td>
+                      <td className="px-3 py-3 align-middle text-center">
+                        {issue.priority === 'High' && <span className="priority-high">高</span>}
+                        {issue.priority === 'Medium' && <span className="priority-medium">中</span>}
+                        {issue.priority === 'Low' && <span className="priority-low">低</span>}
+                      </td>
+                      <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
+                        <span className="inline-block max-w-[6rem] truncate" title={issue.category}>
+                          {issue.category}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
+                        {issue.assignee_name || '-'}
+                      </td>
+                      <td className="px-4 py-3 align-middle text-sm text-gray-700">
+                        <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-2">
+                          <span className="text-xs text-gray-500 text-right pr-1">硬體</span>
+                          <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${hardwareBadge.className}`}>
+                            {hardwareBadge.label}
+                          </span>
+                          <span className="text-xs text-gray-500 text-right pr-1">軟體</span>
+                          <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${softwareBadge.className}`}>
+                            {softwareBadge.label}
+                          </span>
                         </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 align-middle text-center">
-                      {issue.status === 'Open' && <span className="status-open">待處理</span>}
-                      {issue.status === 'In Progress' && <span className="status-in-progress">處理中</span>}
-                      {issue.status === 'Closed' && <span className="status-closed">已完成</span>}
-                      {issue.status === 'Pending' && <span className="status-pending">暫停</span>}
-                    </td>
-                    <td className="px-3 py-3 align-middle text-center">
-                      {issue.priority === 'High' && <span className="priority-high">高</span>}
-                      {issue.priority === 'Medium' && <span className="priority-medium">中</span>}
-                      {issue.priority === 'Low' && <span className="priority-low">低</span>}
-                    </td>
-                    <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
-                      <span className="inline-block max-w-[6rem] truncate" title={issue.category}>
-                        {issue.category}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
-                      {issue.assignee_name || '-'}
-                    </td>
-                    <td className="px-4 py-3 align-middle text-sm text-gray-700">
-                      <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-2">
-                        <span className="text-xs text-gray-500 text-right pr-1">硬體</span>
-                        <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${hardwareBadge.className}`}>
-                          {hardwareBadge.label}
-                        </span>
-                        <span className="text-xs text-gray-500 text-right pr-1">軟體</span>
-                        <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${softwareBadge.className}`}>
-                          {softwareBadge.label}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
-                      {createdDate}
-                    </td>
-                    <td className="px-3 py-3 align-middle text-sm">
-                      <div className="flex items-center justify-center gap-3">
-                        <button
-                          onClick={() => navigate(`/issues/${issue.id}`)}
-                          className="text-primary-600 hover:text-primary-800 font-medium"
-                        >
-                          查看
-                        </button>
-                        <button
-                          onClick={() => handleDeleteIssue(issue.id)}
-                          className="text-danger-600 hover:text-danger-800 font-medium"
-                        >
-                          刪除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
+                        {createdDate}
+                      </td>
+                      <td className="px-3 py-3 align-middle text-sm">
+                        <div className="flex items-center justify-center gap-3">
+                          <button
+                            onClick={() => navigate(`/issues/${issue.id}`)}
+                            className="text-primary-600 hover:text-primary-800 font-medium"
+                          >
+                            查看
+                          </button>
+                          <button
+                            onClick={() => toggleIssueDetail(issue.id)}
+                            className="text-slate-500 hover:text-slate-700 font-medium"
+                          >
+                            描述
+                          </button>
+                          <button
+                            onClick={() => handleDeleteIssue(issue.id)}
+                            className="text-danger-600 hover:text-danger-800 font-medium"
+                          >
+                            刪除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedIssue === issue.id && (
+                      <tr className="bg-primary-50/40">
+                        <td colSpan={9} className="px-6 pb-6 pt-3">
+                          <div className="rounded-xl border border-primary-100 bg-white shadow-sm p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-sm font-semibold text-gray-900">問題描述</h4>
+                              {loadingDetailId === issue.id && (
+                                <span className="text-xs text-gray-500">載入中...</span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                              {expandedDetails[issue.id]?.description || issue.description || '尚未提供描述'}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
               })}
                     </tbody>
