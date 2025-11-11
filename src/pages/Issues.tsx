@@ -22,7 +22,7 @@ export default function Issues() {
   const [showForm, setShowForm] = useState(false)
   const [viewMode] = useState<ViewMode>('list')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
-  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [sortField, setSortField] = useState<SortField | null>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [showFilterDrawer, setShowFilterDrawer] = useState(false)
 
