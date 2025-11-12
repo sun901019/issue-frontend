@@ -193,11 +193,17 @@ export default function IssueDetail() {
     }
   }
 
-  const handleAddComment = async (body: string) => {
+  const handleAddComment = async ({ body, files }: { body: string; files: File[] }) => {
     if (!id) return
-    
+
     try {
-      await api.post(`/issues/${id}/comments/`, { body })
+      const formData = new FormData()
+      formData.append('body', body)
+      files.forEach((file) => formData.append('attachments', file))
+
+      await api.post(`/issues/${id}/comments/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       setShowCommentForm(false)
       await loadIssue() // 重新載入 Issue 以取得最新評論
     } catch (error) {
@@ -591,6 +597,32 @@ export default function IssueDetail() {
                           <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
                             {comment.body}
                           </p>
+                        )}
+                        {!isEditing && comment.attachments && comment.attachments.length > 0 && (
+                          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 space-y-2">
+                            <div className="font-medium text-gray-700">附件</div>
+                            <div className="flex flex-col gap-1">
+                              {comment.attachments.map((attachment: any) => (
+                                <a
+                                  key={attachment.id}
+                                  href={attachment.file_url || attachment.file || '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-800"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M16.5 6.5l-7 7a2 2 0 102.828 2.828L18.5 9.828a4 4 0 10-5.657-5.657l-7.07 7.071a6 6 0 108.485 8.485l5.657-5.657"
+                                    />
+                                  </svg>
+                                  <span className="truncate">{attachment.filename}</span>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
                         )}
                         <div className="flex flex-wrap gap-2 justify-end">
                           {isEditing ? (

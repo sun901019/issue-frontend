@@ -50,6 +50,8 @@ export default function Customers() {
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [warrantyFilter, setWarrantyFilter] = useState<'active' | 'expired'>('active')
+  const [page, setPage] = useState(1)
+  const pageSize = 10
   const [expandedHardwareCustomers, setExpandedHardwareCustomers] = useState<number[]>([])
   const [expandedSoftwareCustomers, setExpandedSoftwareCustomers] = useState<number[]>([])
 type WarrantyFormItem = {
@@ -73,6 +75,10 @@ type WarrantyFormItem = {
   useEffect(() => {
     loadCustomers()
   }, [])
+
+  useEffect(() => {
+    setPage(1)
+  }, [warrantyFilter])
 
   const defaultHardwareStatus = getWarrantyStatus(undefined)
 
@@ -288,6 +294,8 @@ type WarrantyFormItem = {
   const filteredCustomers = warrantyFilter === 'expired' ? expiredCustomers : activeCustomers
   const activeCount = activeCustomers.length
   const expiredCount = expiredCustomers.length
+  const paginatedCustomers = filteredCustomers.slice((page - 1) * pageSize, page * pageSize)
+  const totalPages = Math.ceil(filteredCustomers.length / pageSize) || 1
 
   if (loading && customers.length === 0) {
     return (
@@ -372,7 +380,7 @@ type WarrantyFormItem = {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredCustomers.map((customer) => {
+            {paginatedCustomers.map((customer) => {
               const { status: hardwareStatus } = deriveHardwareStatus(customer)
               const hardwareBadgeClass = getBadgeClass(hardwareStatus)
               const softwareSummary = customer.software_summary
@@ -544,6 +552,33 @@ type WarrantyFormItem = {
           <div className="text-center py-12 text-gray-500">尚無客戶資料</div>
         )}
       </div>
+
+      {filteredCustomers.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="text-sm text-gray-700">
+            顯示 {paginatedCustomers.length} / {filteredCustomers.length} 筆
+          </div>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 border rounded-md disabled:opacity-50"
+            >
+              上一頁
+            </button>
+            <span className="px-3 py-2 text-sm text-gray-600">
+              第 {page} / {totalPages} 頁
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-4 py-2 border rounded-md disabled:opacity-50"
+            >
+              下一頁
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 表單 Modal */}
       {showForm && (

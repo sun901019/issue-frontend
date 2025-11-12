@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { issuesApi, Issue, WarrantyStatus } from '../services/issues'
 import api from '../services/api'
 
@@ -71,9 +71,12 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
   
   const [users, setUsers] = useState<Array<{ id: number; username: string }>>([])
   const [customers, setCustomers] = useState<CustomerOption[]>([])
+  const [customerSearch, setCustomerSearch] = useState('')
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | undefined>(issue?.customer)
   const [selectedWarrantyId, setSelectedWarrantyId] = useState<number | null>(() => issue?.warranty ?? null)
   const [hasManualWarrantySelection, setHasManualWarrantySelection] = useState(false)
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const customerSelectRef = useRef<HTMLDivElement | null>(null)
   
   const [dictionaries, setDictionaries] = useState<{
     status?: Dictionary[]
@@ -182,9 +185,24 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
   }, [selectedCustomerId])
 
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (customerSelectRef.current && !customerSelectRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
     setCreatedAt(formatDateLocal(issue?.created_at) || formatDateLocal(new Date().toISOString()))
   }, [issue?.created_at])
 
+  const filteredCustomers = customerSearch
+    ? customers.filter((customer) =>
+        customer.name.toLowerCase().includes(customerSearch.toLowerCase())
+      )
+    : customers
   const selectedCustomer = selectedCustomerId
     ? customers.find(c => c.id === selectedCustomerId)
     : undefined
@@ -273,22 +291,99 @@ export default function IssueForm({ issue, onSuccess, onCancel }: IssueFormProps
         <label className="block text-sm font-medium text-gray-700 mb-1">
           客戶 <span className="text-red-500">*</span>
         </label>
-        <select
-          required
-          value={selectedCustomerId || ''}
-          onChange={(e) => {
-            const customerId = e.target.value ? Number(e.target.value) : undefined
-            setSelectedCustomerId(customerId)
-          }}
-          className={`mt-1 ${selectClass}`}
-        >
-          <option value="">請選擇客戶</option>
-          {customers.map((customer) => (
-            <option key={customer.id} value={customer.id}>
-              {customer.name}
-            </option>
-          ))}
-        </select>
+        <div className="relative" ref={customerSelectRef}>
+          <div
+            className="flex items-center rounded-lg border border-primary-300 bg-white shadow-sm focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500"
+            onClick={() => setShowCustomerDropdown(true)}
+          >
+            <span className="px-3 text-gray-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M16.65 9.825a6.825 6.825 0 11-13.65 0 6.825 6.825 0 0113.65 0z" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              value={customerSearch}
+              onFocus={() => setShowCustomerDropdown(true)}
+              onChange={(e) => {
+                setCustomerSearch(e.target.value)
+                setShowCustomerDropdown(true)
+              }}
+              placeholder="輸入公司名稱搜尋"
+              className="flex-1 border-0 bg-transparent px-1 py-2 text-sm text-gray-900 focus:outline-none"
+            />
+            {customerSearch && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setCustomerSearch('')
+                  setSelectedCustomerId(undefined)
+                }}
+                className="px-3 text-xs text-gray-400 hover:text-primary-500"
+              >
+                清除
+              </button>
+            )}
+            <button
+              type="button"
+              className="px-3 text-gray-400 hover:text-primary-500"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowCustomerDropdown((prev) => !prev)
+              }}
+            >
+              <svg
+                className={`w-4 h-4 transition-transform ${showCustomerDropdown ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+
+          {showCustomerDropdown && (
+            <div className="absolute z-10 mt-2 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCustomerId(undefined)
+                  setCustomerSearch('')
+                  setShowCustomerDropdown(false)
+                }}
+                className={`w-full text-left px-4 py-2 text-sm ${
+                  !selectedCustomerId ? 'bg-primary-50 text-primary-600 font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                請選擇客戶
+              </button>
+              {filteredCustomers.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-gray-500">找不到符合的客戶</div>
+              ) : (
+                filteredCustomers.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCustomerId(customer.id)
+                      setCustomerSearch(customer.name)
+                      setShowCustomerDropdown(false)
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm ${
+                      selectedCustomerId === customer.id
+                        ? 'bg-primary-50 text-primary-600 font-semibold'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {customer.name}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {selectedCustomer && (

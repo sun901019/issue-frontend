@@ -9,6 +9,9 @@ export interface DashboardSummary {
   avg_frt?: number
   avg_mttr?: number
   completion_rate?: number
+  open_rate?: number
+  in_progress_rate?: number
+  pending_rate?: number
   trend_7days?: number[]
   change_percentage?: number
 }

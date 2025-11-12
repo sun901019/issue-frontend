@@ -290,7 +290,7 @@ export default function Issues() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-screen-2xl mx-auto">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-gray-900">Issues</h2>
@@ -363,9 +363,9 @@ export default function Issues() {
           ) : (
             <div className="card overflow-hidden">
               <table className="min-w-full table-auto divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr className="text-sm font-medium text-gray-500 tracking-wide">
-                        <th className="px-3 py-3 text-left">
+                <thead className="bg-gray-50">
+                  <tr className="text-sm font-semibold uppercase tracking-wide text-gray-600">
+                        <th className="px-5 py-3 text-left">
                           <input
                             type="checkbox"
                             checked={selectedIds.length === issues.length && issues.length > 0}
@@ -374,56 +374,57 @@ export default function Issues() {
                           />
                         </th>
                         <th
-                          className="px-4 py-3 text-left cursor-pointer hover:bg-gray-100"
+                          className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort('title')}
                         >
-                          <div className="flex items-center space-x-1 text-gray-600">
+                          <div className="flex items-center space-x-2 text-gray-600">
                             <span>客戶</span>
                             {getSortIcon('title')}
                           </div>
                         </th>
                         <th
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100"
+                          className="px-6 py-3 text-center cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort('status')}
                         >
-                          <div className="flex items-center justify-center space-x-1 text-gray-600">
+                          <div className="flex items-center justify-center space-x-2 text-gray-600">
                             <span>狀態</span>
                             {getSortIcon('status')}
                           </div>
                         </th>
                         <th
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100"
+                          className="px-6 py-3 text-center cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort('priority')}
                         >
-                          <div className="flex items-center justify-center space-x-1 text-gray-600">
+                          <div className="flex items-center justify-center space-x-2 text-gray-600">
                             <span>優先級</span>
                             {getSortIcon('priority')}
                           </div>
                         </th>
                         <th
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100"
+                          className="px-6 py-3 text-center cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort('category')}
                         >
-                          <div className="flex items-center justify-center space-x-1 text-gray-600">
+                          <div className="flex items-center justify-center space-x-2 text-gray-600">
                             <span>類別</span>
                             {getSortIcon('category')}
                           </div>
                         </th>
-                        <th className="px-4 py-3 text-center text-gray-600 font-normal">負責人</th>
-                        <th className="px-4 py-3 text-left text-gray-600 font-normal">保固狀態</th>
+                        <th className="px-6 py-3 text-center text-gray-600">來源</th>
+                        <th className="px-6 py-3 text-center text-gray-600">負責人</th>
+                        <th className="px-6 py-3 text-left text-gray-600">保固狀態</th>
                         <th
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100"
+                          className="px-6 py-3 text-center cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort('created_at')}
                         >
-                          <div className="flex items-center justify-center space-x-1 text-gray-600">
+                          <div className="flex items-center justify-center space-x-2 text-gray-600">
                             <span>建立時間</span>
                             {getSortIcon('created_at')}
                           </div>
                         </th>
-                        <th className="px-4 py-3 text-center text-gray-600 font-normal">操作</th>
+                        <th className="px-6 py-3 text-center text-gray-600">操作</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-gray-100">
                               {issues.map((issue) => {
                                 const hardwareStatus =
                                   issue.hardware_warranty_status ||
@@ -444,10 +445,8 @@ export default function Issues() {
 
                 return (
                   <Fragment key={issue.id}>
-                    <tr
-                      className={`transition-colors ${rowClass}`}
-                    >
-                      <td className="px-3 py-3 align-middle">
+                    <tr className={`transition-colors ${rowClass}`}>
+                      <td className="px-6 py-4 align-middle">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -455,65 +454,80 @@ export default function Issues() {
                           className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                         />
                       </td>
-                      <td className="px-4 py-3 align-middle text-sm text-gray-900">
-                        <div className="font-medium text-base leading-snug truncate">{issue.customer_name || issue.title || '-'}</div>
+                      <td className="px-6 py-4 align-middle text-sm font-semibold text-gray-900 whitespace-nowrap">
+                        <div>{issue.customer_name || issue.title || '-'}</div>
                         {issue.project_name && (
-                          <div className="mt-0.5 text-xs text-gray-500 leading-snug truncate" title={issue.project_name}>
+                          <div className="mt-1 text-xs text-gray-500 whitespace-nowrap">
                             {issue.project_name}
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-3 align-middle text-center">
-                        {issue.status === 'Open' && <span className="status-open">待處理</span>}
-                        {issue.status === 'In Progress' && <span className="status-in-progress">處理中</span>}
-                        {issue.status === 'Closed' && <span className="status-closed">已完成</span>}
-                        {issue.status === 'Pending' && <span className="status-pending">暫停</span>}
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex justify-center">
+                          {issue.status === 'Open' && <span className="status-open whitespace-nowrap">待處理</span>}
+                          {issue.status === 'In Progress' && <span className="status-in-progress whitespace-nowrap">處理中</span>}
+                          {issue.status === 'Closed' && <span className="status-closed whitespace-nowrap">已完成</span>}
+                          {issue.status === 'Pending' && <span className="status-pending whitespace-nowrap">暫停</span>}
+                        </div>
                       </td>
-                      <td className="px-3 py-3 align-middle text-center">
-                        {issue.priority === 'High' && <span className="priority-high">高</span>}
-                        {issue.priority === 'Medium' && <span className="priority-medium">中</span>}
-                        {issue.priority === 'Low' && <span className="priority-low">低</span>}
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex justify-center">
+                          {issue.priority === 'High' && <span className="priority-high whitespace-nowrap">高</span>}
+                          {issue.priority === 'Medium' && <span className="priority-medium whitespace-nowrap">中</span>}
+                          {issue.priority === 'Low' && <span className="priority-low whitespace-nowrap">低</span>}
+                        </div>
                       </td>
-                      <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
-                        <span className="inline-block max-w-[6rem] truncate" title={issue.category}>
-                          {issue.category}
-                        </span>
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex justify-center">
+                          <span className="text-sm text-gray-700 whitespace-nowrap">{issue.category || '-'}</span>
+                        </div>
                       </td>
-                      <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
-                        {issue.assignee_name || '-'}
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex justify-center">
+                          <span className="inline-flex min-w-[88px] justify-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600">
+                          {issue.source || '-'}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 align-middle text-sm text-gray-700">
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex justify-center">
+                          <span className="text-sm text-gray-700 whitespace-nowrap">{issue.assignee_name || '-'}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 align-middle text-center text-sm text-gray-700">
                         <div className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-2">
-                          <span className="text-xs text-gray-500 text-right pr-1">硬體</span>
-                          <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${hardwareBadge.className}`}>
+                          <span className="text-xs text-gray-500 text-right pr-1 whitespace-nowrap">硬體</span>
+                          <span className={`inline-flex min-w-[72px] justify-center items-center rounded-full px-3 py-1 text-xs font-medium ${hardwareBadge.className}`}>
                             {hardwareBadge.label}
                           </span>
-                          <span className="text-xs text-gray-500 text-right pr-1">軟體</span>
-                          <span className={`inline-flex min-w-[64px] justify-center items-center rounded-full px-2 py-0.5 text-xs font-medium ${softwareBadge.className}`}>
+                          <span className="text-xs text-gray-500 text-right pr-1 whitespace-nowrap">軟體</span>
+                          <span className={`inline-flex min-w-[72px] justify-center items-center rounded-full px-3 py-1 text-xs font-medium ${softwareBadge.className}`}>
                             {softwareBadge.label}
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-3 align-middle text-center text-sm text-gray-600">
-                        {createdDate}
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex justify-center">
+                          <span className="text-sm text-gray-700 whitespace-nowrap">{createdDate}</span>
+                        </div>
                       </td>
-                      <td className="px-3 py-3 align-middle text-sm">
-                        <div className="flex items-center justify-center gap-3">
+                      <td className="px-6 py-4 align-middle text-sm">
+                        <div className="flex items-center justify-center gap-4">
                           <button
                             onClick={() => navigate(`/issues/${issue.id}`)}
-                            className="text-primary-600 hover:text-primary-800 font-medium"
+                            className="text-primary-600 hover:text-primary-800 font-medium whitespace-nowrap"
                           >
                             查看
                           </button>
                           <button
                             onClick={() => toggleIssueDetail(issue.id)}
-                            className="text-slate-500 hover:text-slate-700 font-medium"
+                            className="text-slate-500 hover:text-slate-700 font-medium whitespace-nowrap"
                           >
                             描述
                           </button>
                           <button
                             onClick={() => handleDeleteIssue(issue.id)}
-                            className="text-danger-600 hover:text-danger-800 font-medium"
+                            className="text-danger-600 hover:text-danger-800 font-medium whitespace-nowrap"
                           >
                             刪除
                           </button>
@@ -522,7 +536,7 @@ export default function Issues() {
                     </tr>
                     {expandedIssue === issue.id && (
                       <tr className="bg-primary-50/40">
-                        <td colSpan={9} className="px-6 pb-6 pt-3">
+                        <td colSpan={10} className="px-6 pb-6 pt-3">
                           <div className="rounded-xl border border-primary-100 bg-white shadow-sm p-4">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="text-sm font-semibold text-gray-900">問題描述</h4>

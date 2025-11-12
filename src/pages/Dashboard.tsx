@@ -77,6 +77,17 @@ export default function Dashboard() {
     )
   }
 
+  const openRate =
+    kpis.open_rate !== undefined ? kpis.open_rate : kpis.total > 0 ? (kpis.open / kpis.total) * 100 : 0
+  const inProgressRate =
+    kpis.in_progress_rate !== undefined
+      ? kpis.in_progress_rate
+      : kpis.total > 0
+        ? (kpis.in_progress / kpis.total) * 100
+        : 0
+  const completionRate =
+    kpis.completion_rate !== undefined ? kpis.completion_rate : kpis.total > 0 ? (kpis.closed / kpis.total) * 100 : 0
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -143,16 +154,15 @@ export default function Dashboard() {
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">待處理</p>
               <p className="mt-2 text-4xl font-black tracking-tight text-warning-600">{kpis.open}</p>
-              {kpis.total > 0 && (
-                <div className="mt-2">
-                  <CircularProgress 
-                    percentage={(kpis.open / kpis.total) * 100} 
-                    size={50}
-                    color="#F59E0B"
-                    showLabel={false}
-                  />
-                </div>
-              )}
+              <div className="mt-3 inline-flex items-center gap-2">
+                <CircularProgress 
+                  percentage={openRate} 
+                  size={52}
+                  color="#F59E0B"
+                  showLabel={true}
+                />
+                <span className="text-xs text-gray-500">佔總數 {Math.round(openRate)}%</span>
+              </div>
             </div>
             <div className="flex items-center justify-center w-14 h-14 bg-gradient-to-br from-warning-100 to-warning-200 rounded-xl shadow-sm">
               <svg className="w-7 h-7 text-warning-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,16 +185,15 @@ export default function Dashboard() {
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">處理中</p>
               <p className="mt-2 text-4xl font-black tracking-tight text-primary-600">{kpis.in_progress}</p>
-              {kpis.total > 0 && (
-                <div className="mt-2">
-                  <CircularProgress 
-                    percentage={(kpis.in_progress / kpis.total) * 100} 
-                    size={50}
-                    color="#3B82F6"
-                    showLabel={false}
-                  />
-                </div>
-              )}
+              <div className="mt-3 inline-flex items-center gap-2">
+                <CircularProgress 
+                  percentage={inProgressRate} 
+                  size={52}
+                  color="#3B82F6"
+                  showLabel={true}
+                />
+                <span className="text-xs text-gray-500">佔總數 {Math.round(inProgressRate)}%</span>
+              </div>
             </div>
             <div className="flex items-center justify-center w-14 h-14 bg-gradient-to-br from-primary-100 to-primary-200 rounded-xl shadow-sm">
               <svg className="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -207,16 +216,15 @@ export default function Dashboard() {
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-500">已完成</p>
               <p className="mt-2 text-4xl font-black tracking-tight text-success-600">{kpis.closed}</p>
-              {kpis.completion_rate !== undefined && (
-                <div className="mt-2">
-                  <CircularProgress 
-                    percentage={kpis.completion_rate} 
-                    size={50}
-                    color="#10B981"
-                    showLabel={true}
-                  />
-                </div>
-              )}
+              <div className="mt-3 inline-flex items-center gap-2">
+                <CircularProgress 
+                  percentage={completionRate} 
+                  size={52}
+                  color="#10B981"
+                  showLabel={true}
+                />
+                <span className="text-xs text-gray-500">佔總數 {Math.round(completionRate)}%</span>
+              </div>
             </div>
             <div className="flex items-center justify-center w-14 h-14 bg-gradient-to-br from-success-100 to-success-200 rounded-xl shadow-sm">
               <svg className="w-7 h-7 text-success-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,7 +314,7 @@ export default function Dashboard() {
               <div className="flex justify-between">
                 <span className="text-gray-500">完成率</span>
                 <span className="font-medium text-success-600">
-                  {kpis.completion_rate !== undefined ? `${kpis.completion_rate}%` : '0%'}
+                  {Math.round(completionRate)}%
                 </span>
               </div>
             </div>
